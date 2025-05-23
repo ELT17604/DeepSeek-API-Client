@@ -27,13 +27,14 @@ import subprocess
 import time
 import base64
 import hashlib
+import re
 
 # 判断是否需要导入tkinter
 USE_GUI = "--gui" in sys.argv or (not "--cli" in sys.argv)
 
 if USE_GUI:
     import tkinter as tk
-    from tkinter import messagebox, simpledialog, scrolledtext
+    from tkinter import messagebox, simpledialog, scrolledtext, ttk, font  # 添加font导入
     # 导入加密需要的库
     try:
         from cryptography.fernet import Fernet
@@ -125,22 +126,425 @@ def delete_api_key_file():
 
 # ===================== GUI 部分 =====================
 if USE_GUI:
+    class MarkdownText(scrolledtext.ScrolledText):
+        """支持Markdown渲染的文本控件"""
+        def __init__(self, master, **kwargs):
+            super().__init__(master, **kwargs)
+            
+            # 配置文本样式标签
+            self.configure_markdown_tags()
+            
+            # 当前文本缓冲区 - 存储原始文本内容
+            self.raw_content = ""
+            
+        def configure_markdown_tags(self):
+            """配置Markdown样式标签"""
+            # 获取默认字体 - 修复字体获取问题
+            try:
+                # 先尝试获取控件的当前字体
+                current_font = self.cget("font")
+                if isinstance(current_font, tuple):
+                    # 如果是元组形式 (family, size, style)
+                    font_family = current_font[0]
+                    font_size = current_font[1] if len(current_font) > 1 else 11
+                elif isinstance(current_font, str):
+                    # 如果是字符串形式，尝试解析
+                    parts = current_font.split()
+                    if len(parts) >= 2:
+                        font_family = parts[0]
+                        try:
+                            font_size = int(parts[1])
+                        except ValueError:
+                            font_size = 11
+                    else:
+                        font_family = current_font
+                        font_size = 11
+                else:
+                    # 使用默认值
+                    font_family = "TkDefaultFont"
+                    font_size = 11
+                    
+                # 如果获取的字体不合理，使用系统默认字体
+                if not font_family or font_family in ["", "none"]:
+                    font_family = "TkDefaultFont"
+                    
+            except Exception:
+                # 如果获取字体失败，使用默认值
+                font_family = "TkDefaultFont"
+                font_size = 11
+            
+            # 标题样式
+            self.tag_configure("h1", font=(font_family, font_size + 6, "bold"), foreground="#2E86AB", spacing1=10, spacing3=5)
+            self.tag_configure("h2", font=(font_family, font_size + 4, "bold"), foreground="#A23B72", spacing1=8, spacing3=4)
+            self.tag_configure("h3", font=(font_family, font_size + 2, "bold"), foreground="#F18F01", spacing1=6, spacing3=3)
+            self.tag_configure("h4", font=(font_family, font_size + 1, "bold"), foreground="#C73E1D", spacing1=4, spacing3=2)
+            
+            # 代码块样式 - 使用等宽字体
+            code_font_family = "Consolas"
+            # 在Windows上检查Consolas是否可用，如果不可用则使用Courier New
+            try:
+                test_font = font.Font(family=code_font_family, size=font_size)
+                test_font.actual()  # 测试字体是否可用
+            except Exception:
+                code_font_family = "Courier New"
+                
+            self.tag_configure("code_block", 
+                             font=(code_font_family, font_size, "normal"),
+                             background="#f6f8fa",
+                             foreground="#24292e",
+                             relief="solid",
+                             borderwidth=1,
+                             lmargin1=20,
+                             lmargin2=20,
+                             rmargin=20,
+                             spacing1=5,
+                             spacing3=5)
+            
+            # 内联代码样式
+            self.tag_configure("inline_code",
+                             font=(code_font_family, font_size - 1, "normal"),
+                             background="#f3f4f6",
+                             foreground="#e11d48",
+                             relief="solid",
+                             borderwidth=1)
+            
+            # 粗体和斜体
+            self.tag_configure("bold", font=(font_family, font_size, "bold"))
+            self.tag_configure("italic", font=(font_family, font_size, "italic"))
+            self.tag_configure("bold_italic", font=(font_family, font_size, "bold italic"))
+            
+            # 列表样式
+            self.tag_configure("list_item", lmargin1=20, lmargin2=40)
+            
+            # 引用样式
+            self.tag_configure("blockquote",
+                             background="#f8f9fa",
+                             foreground="#6a737d",
+                             lmargin1=20,
+                             lmargin2=20,
+                             rmargin=20,
+                             relief="solid",
+                             borderwidth=1,
+                             spacing1=5,
+                             spacing3=5)
+            
+            # 普通文本样式
+            self.tag_configure("normal", font=(font_family, font_size, "normal"))
+            
+        def update_markdown_font(self, new_font_family, new_font_size):
+            """更新Markdown样式的字体"""
+            # 检查代码字体是否可用
+            code_font_family = "Consolas"
+            try:
+                test_font = font.Font(family=code_font_family, size=new_font_size)
+                test_font.actual()
+            except Exception:
+                code_font_family = "Courier New"
+                
+            # 重新配置所有标签的字体
+            self.tag_configure("h1", font=(new_font_family, new_font_size + 6, "bold"))
+            self.tag_configure("h2", font=(new_font_family, new_font_size + 4, "bold"))
+            self.tag_configure("h3", font=(new_font_family, new_font_size + 2, "bold"))
+            self.tag_configure("h4", font=(new_font_family, new_font_size + 1, "bold"))
+            self.tag_configure("code_block", font=(code_font_family, new_font_size, "normal"))
+            self.tag_configure("inline_code", font=(code_font_family, new_font_size - 1, "normal"))
+            self.tag_configure("bold", font=(new_font_family, new_font_size, "bold"))
+            self.tag_configure("italic", font=(new_font_family, new_font_size, "italic"))
+            self.tag_configure("bold_italic", font=(new_font_family, new_font_size, "bold italic"))
+            self.tag_configure("normal", font=(new_font_family, new_font_size, "normal"))
+            
+        def append_raw_text(self, text, end="\n"):
+            """追加原始文本到缓冲区"""
+            self.raw_content += text
+            if end:
+                self.raw_content += end
+                
+        def get_raw_content(self):
+            """获取原始文本内容"""
+            return self.raw_content
+            
+        def set_raw_content(self, content):
+            """设置原始文本内容"""
+            self.raw_content = content
+            
+        def clear_all(self):
+            """清空所有内容"""
+            self.raw_content = ""
+            self.delete(1.0, tk.END)
+            
+        def _render_markdown_text(self, text):
+            """渲染Markdown文本的核心方法"""
+            if not text:
+                return
+                
+            lines = text.split('\n')
+            current_pos = 1.0
+            
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                line_start = current_pos
+                
+                # 处理代码块
+                if line.strip().startswith('```'):
+                    # 找到代码块结束
+                    code_lines = []
+                    i += 1
+                    while i < len(lines) and not lines[i].strip().startswith('```'):
+                        code_lines.append(lines[i])
+                        i += 1
+                    
+                    # 插入代码块（不包含```标记）
+                    if code_lines:
+                        code_text = '\n'.join(code_lines) + '\n'
+                        self.insert(current_pos, code_text)
+                        end_pos = f"{line_start}+{len(code_text)}c"
+                        self.tag_add("code_block", line_start, end_pos)
+                        current_pos = end_pos
+                    i += 1
+                    continue
+                
+                # 处理标题
+                if line.strip().startswith('#'):
+                    hash_count = 0
+                    for char in line:
+                        if char == '#':
+                            hash_count += 1
+                        else:
+                            break
+                    
+                    if hash_count <= 4:
+                        title_text = line.strip('#').strip()  # 移除#号和空格
+                        if title_text:
+                            display_text = title_text + '\n'
+                            self.insert(current_pos, display_text)
+                            end_pos = f"{line_start}+{len(display_text)}c"
+                            self.tag_add(f"h{hash_count}", line_start, end_pos)
+                            current_pos = end_pos
+                            i += 1
+                            continue
+                
+                # 处理引用块
+                if line.strip().startswith('>'):
+                    quote_lines = []
+                    while i < len(lines) and lines[i].strip().startswith('>'):
+                        quote_text = lines[i].strip().lstrip('>').strip()  # 移除>号和空格
+                        quote_lines.append(quote_text)
+                        i += 1
+                    
+                    if quote_lines:
+                        quote_text = '\n'.join(quote_lines) + '\n'
+                        self.insert(current_pos, quote_text)
+                        end_pos = f"{line_start}+{len(quote_text)}c"
+                        self.tag_add("blockquote", line_start, end_pos)
+                        current_pos = end_pos
+                    continue
+                
+                # 处理列表项
+                if re.match(r'^\s*[-*+]\s+', line) or re.match(r'^\s*\d+\.\s+', line):
+                    # 移除列表标记，保留缩进
+                    clean_line = re.sub(r'^(\s*)[-*+]\s+', r'\1• ', line)  # 将-*+替换为•
+                    clean_line = re.sub(r'^(\s*)\d+\.\s+', r'\1\g<0>', clean_line)  # 保留数字列表
+                    display_text = clean_line + '\n'
+                    self.insert(current_pos, display_text)
+                    end_pos = f"{line_start}+{len(display_text)}c"
+                    self.tag_add("list_item", line_start, end_pos)
+                    current_pos = end_pos
+                    i += 1
+                    continue
+                
+                # 处理普通文本（包含内联格式）
+                processed_line = self._process_inline_formatting(line)
+                display_text = processed_line['text'] + '\n'
+                self.insert(current_pos, display_text)
+                
+                # 应用格式标签
+                self._apply_format_tags(line_start, processed_line['formats'])
+                
+                current_pos = f"{line_start}+{len(display_text)}c"
+                i += 1
+        
+        def _process_inline_formatting(self, text):
+            """处理内联格式并返回处理后的文本和格式信息"""
+            processed_text = text
+            formats = []
+            offset = 0  # 跟踪文本长度变化
+            
+            # 处理顺序：先处理最长的格式（粗体斜体），然后是粗体，最后是斜体
+            # 这样可以避免格式冲突
+            
+            # 1. 处理内联代码（最高优先级，不被其他格式影响）
+            code_pattern = r'`([^`]+)`'
+            code_matches = list(re.finditer(code_pattern, text))
+            # 记录代码区域，避免在代码中处理其他格式
+            code_ranges = [(match.start(), match.end()) for match in code_matches]
+            
+            for match in reversed(code_matches):  # 从后往前处理，避免位置偏移
+                start, end = match.span()
+                content = match.group(1)
+                # 替换`code`为code，并记录格式
+                processed_text = processed_text[:start] + content + processed_text[end:]
+                formats.append({
+                    'start': start - offset,
+                    'end': start - offset + len(content),
+                    'type': 'inline_code'
+                })
+                offset += 2  # 减去两个`符号
+            
+            # 2. 处理粗体斜体 ***text***
+            bold_italic_pattern = r'\*\*\*([^*]+?)\*\*\*'
+            bold_italic_matches = list(re.finditer(bold_italic_pattern, processed_text))
+            
+            for match in reversed(bold_italic_matches):
+                start, end = match.span()
+                # 检查是否与代码区域重叠
+                if not self._position_in_ranges(start, end, code_ranges, offset):
+                    content = match.group(1)
+                    processed_text = processed_text[:start] + content + processed_text[end:]
+                    formats.append({
+                        'start': start,
+                        'end': start + len(content),
+                        'type': 'bold_italic'
+                    })
+                    offset += 6  # 减去六个*符号
+            
+            # 3. 处理粗体 **text**
+            bold_pattern = r'\*\*([^*]+?)\*\*'
+            bold_matches = list(re.finditer(bold_pattern, processed_text))
+            
+            for match in reversed(bold_matches):
+                start, end = match.span()
+                # 检查是否与代码区域或已处理的粗体斜体重叠
+                if not self._position_in_ranges(start, end, code_ranges, offset):
+                    content = match.group(1)
+                    processed_text = processed_text[:start] + content + processed_text[end:]
+                    formats.append({
+                        'start': start,
+                        'end': start + len(content),
+                        'type': 'bold'
+                    })
+                    offset += 4  # 减去四个*符号
+            
+            # 4. 处理斜体 *text*
+            italic_pattern = r'\*([^*]+?)\*'
+            italic_matches = list(re.finditer(italic_pattern, processed_text))
+            
+            for match in reversed(italic_matches):
+                start, end = match.span()
+                # 检查是否与其他格式重叠
+                if not self._position_in_ranges(start, end, code_ranges, offset):
+                    content = match.group(1)
+                    processed_text = processed_text[:start] + content + processed_text[end:]
+                    formats.append({
+                        'start': start,
+                        'end': start + len(content),
+                        'type': 'italic'
+                    })
+                    offset += 2  # 减去两个*符号
+            
+            return {
+                'text': processed_text,
+                'formats': formats
+            }
+        
+        def _position_in_ranges(self, start, end, ranges, offset):
+            """检查位置是否在指定范围内（考虑偏移量）"""
+            adjusted_start = start + offset
+            adjusted_end = end + offset
+            
+            for range_start, range_end in ranges:
+                if (adjusted_start < range_end and adjusted_end > range_start):
+                    return True
+            return False
+        
+        def _apply_format_tags(self, line_start_pos, formats):
+            """应用格式标签到文本"""
+            for fmt in formats:
+                start_pos = f"{line_start_pos}+{fmt['start']}c"
+                end_pos = f"{line_start_pos}+{fmt['end']}c"
+                self.tag_add(fmt['type'], start_pos, end_pos)
+        
+        def _apply_inline_formatting(self, start_pos, end_pos, text):
+            """应用内联格式（粗体、斜体、代码等）- 保留原方法作为备用"""
+            # 这个方法现在由新的处理逻辑替代，但保留以防兼容性问题
+            pass
+                    
+        def _overlaps_with_matches(self, match, other_matches):
+            """检查当前匹配是否与其他匹配重叠"""
+            for other_match in other_matches:
+                if (match.start() < other_match.end() and match.end() > other_match.start()):
+                    return True
+            return False
+
+        def render_as_markdown(self):
+            """将当前原始内容渲染为Markdown"""
+            # 保存当前滚动位置
+            current_pos = self.yview()
+            
+            # 清空显示区域并重新渲染
+            self.delete(1.0, tk.END)
+            self._render_markdown_text(self.raw_content)
+            
+            # 滚动到底部
+            self.see(tk.END)
+            
+        def render_as_plain_text(self):
+            """将当前原始内容渲染为纯文本"""
+            # 保存当前滚动位置
+            current_pos = self.yview()
+            
+            # 清空显示区域并插入纯文本
+            self.delete(1.0, tk.END)
+            self.insert(1.0, self.raw_content)
+            
+            # 滚动到底部
+            self.see(tk.END)
+            
+        def append_and_render(self, text, end="\n", markdown_enabled=True):
+            """追加文本并根据模式渲染"""
+            self.append_raw_text(text, end)
+            
+            if markdown_enabled:
+                self.render_as_markdown()
+            else:
+                self.render_as_plain_text()
+            
+        def switch_render_mode(self, markdown_enabled):
+            """切换渲染模式（保持内容不变）"""
+            if markdown_enabled:
+                self.render_as_markdown()
+            else:
+                self.render_as_plain_text()
+
     class StatusIndicator(tk.Frame):
         """状态指示器控件，每行显示状态文本和一个彩色指示灯"""
         def __init__(self, master, label_text, **kwargs):
             super().__init__(master, **kwargs)
             self.label_text = label_text
-            self.status_var = tk.StringVar(value=label_text)
-            self.label = tk.Label(self, textvariable=self.status_var, anchor="w", width=38)
-            self.label.pack(side=tk.LEFT, padx=(2, 0))
-            self.canvas = tk.Canvas(self, width=16, height=16, highlightthickness=0)
+            self.status_var = tk.StringVar(value=f"{label_text}: Not initialized")
+            
+            # 状态文本标签 - 增加宽度以容纳延迟信息
+            self.label = tk.Label(self, textvariable=self.status_var, anchor="w", width=28, font=("Arial", 9))
+            self.label.pack(side=tk.LEFT, padx=(2, 5))
+            
+            # 彩色指示灯
+            self.canvas = tk.Canvas(self, width=16, height=16, highlightthickness=0, bg="white")
             self.canvas.pack(side=tk.LEFT, padx=2)
-            self.indicator = self.canvas.create_oval(2, 2, 14, 14, fill="gray", outline="black")
+            self.indicator = self.canvas.create_oval(2, 2, 14, 14, fill="gray", outline="darkgray", width=1)
 
         def set_status(self, text, color):
             """设置状态文本和指示灯颜色"""
             self.status_var.set(f"{self.label_text}: {text}")
-            self.canvas.itemconfig(self.indicator, fill=color)
+            # 确保颜色映射正确
+            color_map = {
+                "red": "#ff4444",
+                "green": "#44ff44", 
+                "yellow": "#ffcc00",
+                "gray": "#888888",
+                "grey": "#888888"
+            }
+            indicator_color = color_map.get(color.lower(), color)
+            self.canvas.itemconfig(self.indicator, fill=indicator_color)
 
     class DeepSeekGUI:
         def __init__(self, master):
@@ -151,95 +555,103 @@ if USE_GUI:
             self.client = None
             self.selected_model = None
             self.messages = []
+            self.available_models = []  # 添加模型列表存储
 
-            # 独立状态指示器窗口
-            self.status_window = tk.Toplevel(master)
-            self.status_window.title("Status Panel")
-            self.status_window.geometry("350x160")
-            self.status_window.resizable(False, False)
-            self.status_window.protocol("WM_DELETE_WINDOW", lambda: self.status_window.withdraw())  # 关闭时隐藏
-            self.status_window.attributes("-topmost", True)  # 始终置顶
+            # ========== 新增：输出栏字体大小相关 ==========
+            self.output_font_size = 11  # 默认字体大小
+            # 修改默认字体为系统字体，避免字体不存在的问题
+            self.output_font_family = "TkDefaultFont"
+            self.output_font = (self.output_font_family, self.output_font_size)
 
-            # 状态指示窗口内容
-            self.status_frame = tk.LabelFrame(self.status_window, text="Status Panel", padx=4, pady=2)
-            self.status_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=4)
+            # ========== API Key输入区域 ==========
+            self.api_frame = tk.Frame(master)
+            self.api_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
 
-            # 五个状态指示器
-            self.status_client = StatusIndicator(self.status_frame, "Client Init")
-            self.status_client.pack(anchor="w")
-            self.status_network = StatusIndicator(self.status_frame, "Network")
-            self.status_network.pack(anchor="w")
-            self.status_model = StatusIndicator(self.status_frame, "Model Select")
-            self.status_model.pack(anchor="w")
-            self.status_http = StatusIndicator(self.status_frame, "HTTP Error")
-            self.status_http.pack(anchor="w")
-            self.status_chat = StatusIndicator(self.status_frame, "Chat Service")
-            self.status_chat.pack(anchor="w")
+            self.api_label = tk.Label(self.api_frame, text="API Key:", font=("Arial", 10))
+            self.api_label.pack(side=tk.LEFT)
 
-            # 主窗口其余内容
-            self.footer_label = tk.Label(
-                master,
-                text="DeepSeek API Client GUI v0.6.1 © 2025 ELT Group",
-                font=("Arial", 8),
-                fg="gray"
-            )
-            self.footer_label.pack(side=tk.BOTTOM, pady=(0, 3))
+            self.api_key_entry = tk.Entry(self.api_frame, show="*", font=("Arial", 10))
+            self.api_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+            self.api_key_entry.bind("<KeyRelease>", self.on_api_key_change)  # 添加这行
 
-            # API Key输入栏
-            self.api_key_entry = tk.Entry(master, width=60, show="")
-            self.api_key_entry.pack(side=tk.BOTTOM, fill=tk.X)
+            # 尝试加载保存的API Key
+            saved_key = load_api_key_from_file()
+            if saved_key:
+                self.api_key_entry.insert(0, saved_key)
+                # 不要在这里自动初始化，让用户手动点击Initialize按钮
+
+            self.init_btn = tk.Button(self.api_frame, text="Initialize", command=self.initialize_client)
+            self.init_btn.pack(side=tk.RIGHT, padx=(5, 0))
+
+            self.api_key_masked_label = tk.Label(self.api_frame, text="", font=("Arial", 10))
+
+            # ========== 模型选择区域 ==========
+            self.model_frame = tk.Frame(master)
+            self.model_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(0, 5))
+
+            self.model_label = tk.Label(self.model_frame, text="Model:", font=("Arial", 10))
+            self.model_label.pack(side=tk.LEFT)
+
+            # 初始化时的模型变量设置
+            self.model_var = tk.StringVar(value="Please select a model...")
+            self.model_combobox = ttk.Combobox(self.model_frame, textvariable=self.model_var, 
+                                               state="readonly", font=("Arial", 10), width=30)
+            self.model_combobox.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
+            self.model_combobox.bind("<<ComboboxSelected>>", self.on_model_selected)
+
+            self.refresh_models_btn = tk.Button(self.model_frame, text="Refresh Models", 
+                                                command=self.refresh_models, state=tk.DISABLED)
+            self.refresh_models_btn.pack(side=tk.RIGHT)
+
+            # ========== 控制按钮区域 ==========
+            self.control_frame = tk.Frame(master)
+            self.control_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(0, 5))
+
+            self.balance_btn = tk.Button(self.control_frame, text="Query Balance", command=self.query_balance)
+            self.balance_btn.pack(side=tk.LEFT)
+
+            self.chat_btn = tk.Button(self.control_frame, text="Start Chat", command=self.start_chat)
+            self.chat_btn.pack(side=tk.LEFT, padx=(5, 0))
+
+            self.clear_btn = tk.Button(self.control_frame, text="Clear Output", command=self.clear_output)
+            self.clear_btn.pack(side=tk.LEFT, padx=(5, 0))
+
+            # 新增：Markdown渲染切换按钮
+            self.markdown_enabled = True  # 默认启用Markdown渲染
+            self.markdown_btn = tk.Button(self.control_frame, text="Markdown: ON", command=self.toggle_markdown_rendering)
+            self.markdown_btn.pack(side=tk.LEFT, padx=(5, 0))
+
+            # 右侧状态监控按钮
+            self.status_btn = tk.Button(self.control_frame, text="Status Monitor", command=self.toggle_status_window)
+            self.status_btn.pack(side=tk.RIGHT)
+
+            # 添加状态指示灯到按钮左侧
+            self.status_indicators_frame = tk.Frame(self.control_frame)
+            self.status_indicators_frame.pack(side=tk.RIGHT, padx=(0, 5))
+
+            # 右侧指示灯 - 跟随chat状态
+            self.chat_indicator_canvas = tk.Canvas(self.status_indicators_frame, width=16, height=16, highlightthickness=0, bg="white")
+            self.chat_indicator_canvas.pack(side=tk.RIGHT, padx=2)
+            self.chat_indicator = self.chat_indicator_canvas.create_oval(2, 2, 14, 14, fill="red", outline="darkgray", width=1)
+
+            # 左侧指示灯 - 综合状态
+            self.overall_indicator_canvas = tk.Canvas(self.status_indicators_frame, width=16, height=16, highlightthickness=0, bg="white")
+            self.overall_indicator_canvas.pack(side=tk.RIGHT, padx=2)
+            self.overall_indicator = self.overall_indicator_canvas.create_oval(2, 2, 14, 14, fill="red", outline="darkgray", width=1)
+
+            # ========== 输出区域 ==========
+            # 修改输出区域的字体设置，使用更安全的默认字体
+            try:
+                self.output = MarkdownText(master, width=80, height=20, state='normal', 
+                                         font=("TkDefaultFont", self.output_font_size))
+            except Exception as e:
+                print(f"Warning: Could not create MarkdownText with specified font: {e}")
+                # 如果仍然失败，使用最基本的设置
+                self.output = MarkdownText(master, width=80, height=20, state='normal')
             
-            # 尝试从文件中加载API Key
-            saved_api_key = load_api_key_from_file()
-            if saved_api_key:
-                self.api_key_entry.insert(0, saved_api_key)
-                self.api_key_entry.config(fg="black")
-            else:
-                self.api_key_entry.insert(0, "API KEY HERE")
-                self.api_key_entry.config(fg="gray")
-
-            def on_entry_click(event):
-                if self.api_key_entry.get() == "API KEY HERE":
-                    self.api_key_entry.delete(0, tk.END)
-                    self.api_key_entry.config(fg="black")
-            def on_focusout(event):
-                if not self.api_key_entry.get():
-                    self.api_key_entry.insert(0, "API KEY HERE")
-                    self.api_key_entry.config(fg="gray")
-
-            self.api_key_entry.bind('<FocusIn>', on_entry_click)
-            self.api_key_entry.bind('<FocusOut>', on_focusout)
-
-            self.api_key_masked_label = tk.Label(master, text="", font=("Arial", 10), fg="gray")
-            self.api_key_masked_label.pack(side=tk.BOTTOM)
-            self.api_key_masked_label.pack_forget()
-
-            self.button_frame = tk.Frame(master)
-            self.button_frame.pack(side=tk.BOTTOM, pady=2)
-
-            self.init_btn = tk.Button(self.button_frame, text="Initialize Client", command=self.initialize_client, state=tk.NORMAL)
-            self.init_btn.pack(side=tk.LEFT, padx=5)
-
-            self.clear_apikey_btn = tk.Button(self.button_frame, text="Remove API Key", command=self.clear_api_key, 
-                                             state=tk.DISABLED if not saved_api_key else tk.NORMAL)
-            self.clear_apikey_btn.pack(side=tk.LEFT, padx=5)
-
-            self.model_btn = tk.Button(master, text="List and Select Model", command=self.list_and_select_model)
-            self.model_btn.pack(pady=2)
-
-            self.balance_btn = tk.Button(master, text="Query Account Balance", command=self.query_balance)
-            self.balance_btn.pack(pady=2)
-
-            self.chat_btn = tk.Button(master, text="Start Chat", command=self.start_chat)
-            self.chat_btn.pack(pady=2)
-
-            self.clear_btn = tk.Button(master, text="Clear Output", command=self.clear_output)
-            self.clear_btn.pack(pady=2)
-
-            self.output = scrolledtext.ScrolledText(master, width=80, height=20, state='normal')
             self.output.pack(padx=5, pady=5, fill=tk.BOTH, expand=True)
 
-            # 用户输入区
+            # ========== 用户输入区 ==========
             self.input_frame = tk.Frame(master)
             self.input_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(0, 2))
 
@@ -252,6 +664,7 @@ if USE_GUI:
             self.user_input.bind("<Return>", self.send_user_input)
             self.user_input.bind("<Control-Return>", lambda e: self.user_input.insert(tk.INSERT, "\n"))
 
+            # ========== 输入控制按钮 ==========
             self.input_btn_frame = tk.Frame(master)
             self.input_btn_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(0, 4))
 
@@ -261,11 +674,65 @@ if USE_GUI:
             self.send_btn = tk.Button(self.input_btn_frame, text="Send", command=self.send_user_input, state=tk.DISABLED)
             self.send_btn.pack(side=tk.RIGHT, padx=(8, 0))
 
+            # 添加停止按钮
+            self.stop_btn = tk.Button(self.input_btn_frame, text="Stop", command=self.stop_streaming, state=tk.DISABLED)
+            self.stop_btn.pack(side=tk.RIGHT, padx=(8, 0))
+
             self.new_btn = tk.Button(self.input_btn_frame, text="New Session", command=self.start_new_session, state=tk.DISABLED)
             self.new_btn.pack(side=tk.RIGHT, padx=(8, 0))
 
             self.end_btn = tk.Button(self.input_btn_frame, text="End Chat", command=self.end_chat, state=tk.NORMAL)
             self.end_btn.pack(side=tk.RIGHT, padx=(8, 0))
+            
+            # 添加停止标志
+            self.streaming_stopped = False
+
+            # ========== 版权信息（放在最底部） ==========
+            self.footer_label = tk.Label(
+                master,
+                text="DeepSeek API Client GUI v0.7.2 © 2025 ELT Group",
+                font=("Arial", 8),
+                fg="gray"
+            )
+            self.footer_label.pack(side=tk.BOTTOM, pady=(0, 3))
+
+            # ========== 字体大小调节控件（移至版权信息上方） ==========
+            self.font_frame = tk.Frame(master)
+            self.font_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=(0, 2))
+
+            self.font_label = tk.Label(self.font_frame, text="输出栏字体大小:", font=("Arial", 9))
+            self.font_label.pack(side=tk.LEFT)
+
+            self.font_minus_btn = tk.Button(self.font_frame, text="－", width=2, command=self.decrease_font_size)
+            self.font_minus_btn.pack(side=tk.LEFT, padx=(2, 0))
+
+            self.font_size_var = tk.IntVar(value=self.output_font_size)
+            self.font_size_entry = tk.Entry(self.font_frame, width=3, textvariable=self.font_size_var, justify="center")
+            self.font_size_entry.pack(side=tk.LEFT, padx=(2, 0))
+            self.font_size_entry.bind("<Return>", self.set_font_size_from_entry)
+
+            self.font_plus_btn = tk.Button(self.font_frame, text="＋", width=2, command=self.increase_font_size)
+            self.font_plus_btn.pack(side=tk.LEFT, padx=(2, 0))
+
+            # ========== API Key 管理控件（移至字体调节上方） ==========
+            self.api_manage_frame = tk.Frame(master)
+            self.api_manage_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=(0, 2))
+
+            self.clear_apikey_btn = tk.Button(self.api_manage_frame, text="Clear API Key", command=self.clear_api_key, state=tk.DISABLED)
+            self.clear_apikey_btn.pack(side=tk.LEFT)
+
+            # ========== 独立状态监控窗口相关 ==========
+            self.status_window = None
+            self.status_indicators = {}
+
+            # 初始化状态监控数据
+            self.status_data = {
+                "client": {"text": "No API Key", "color": "red"},
+                "network": {"text": "Checking...", "color": "gray"},
+                "model": {"text": "Not selected", "color": "red"},
+                "http": {"text": "OK", "color": "green"},  # 默认HTTP状态设为绿色
+                "chat": {"text": "Not ready", "color": "red"}
+            }
 
             # 初始化状态
             self.update_client_status()
@@ -279,149 +746,479 @@ if USE_GUI:
             self.network_thread = threading.Thread(target=self.network_status_loop, daemon=True)
             self.network_thread.start()
 
-        def disable_copy(self, event):
-            return "break"
+            # 在创建完所有指示灯控件后再初始化状态
+            # 初始化状态
+            self.update_client_status()
+            self.update_network_status()
+            self.update_model_status()
+            self.update_http_status()
+            self.update_chat_status("not_ready")
 
-        def print_out(self, text):
-            self.output.insert(tk.END, text + "\n")
-            self.output.see(tk.END)
+        def toggle_status_window(self):
+            """切换状态监控窗口的显示/隐藏"""
+            if self.status_window is None or not self.status_window.winfo_exists():
+                self.create_status_window()
+                self.status_btn.config(text="Hide Status")
+            else:
+                self.status_window.destroy()
+                self.status_window = None
+                self.status_btn.config(text="Status Monitor")
 
-        def clear_output(self):
-            self.output.delete(1.0, tk.END)
+        def create_status_window(self):
+            """创建独立的状态监控窗口"""
+            self.status_window = tk.Toplevel(self.master)
+            self.status_window.title("Status Monitor")
+            self.status_window.geometry("320x160")  # 稍微增加宽度以容纳延迟数据
+            self.status_window.resizable(False, False)
+            
+            # 隐藏窗口的关闭按钮和标题栏
+            self.status_window.overrideredirect(True)
+            
+            # 设置窗口位置（在主窗口右侧）
+            main_x = self.master.winfo_x()
+            main_y = self.master.winfo_y()
+            main_width = self.master.winfo_width()
+            self.status_window.geometry(f"320x160+{main_x + main_width + 10}+{main_y}")
+            
+            # 添加标题栏
+            title_frame = tk.Frame(self.status_window, bg="darkgray", height=25)
+            title_frame.pack(fill=tk.X)
+            title_frame.pack_propagate(False)
+            
+            title_label = tk.Label(title_frame, text="Status Monitor", bg="darkgray", fg="white", font=("Arial", 9, "bold"))
+            title_label.pack(side=tk.LEFT, padx=5, pady=3)
+            
+            # 内容区域
+            content_frame = tk.Frame(self.status_window, bg="white")
+            content_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+            
+            # 创建状态指示器
+            self.status_indicators["client"] = StatusIndicator(content_frame, "Client")
+            self.status_indicators["client"].pack(anchor="w", padx=5, pady=2)
+
+            self.status_indicators["network"] = StatusIndicator(content_frame, "Network")
+            self.status_indicators["network"].pack(anchor="w", padx=5, pady=2)
+
+            self.status_indicators["model"] = StatusIndicator(content_frame, "Model")
+            self.status_indicators["model"].pack(anchor="w", padx=5, pady=2)
+
+            self.status_indicators["http"] = StatusIndicator(content_frame, "HTTP")
+            self.status_indicators["http"].pack(anchor="w", padx=5, pady=2)
+
+            self.status_indicators["chat"] = StatusIndicator(content_frame, "Chat")
+            self.status_indicators["chat"].pack(anchor="w", padx=5, pady=2)
+
+            # 更新所有状态显示
+            for key, data in self.status_data.items():
+                if key in self.status_indicators:
+                    self.status_indicators[key].set_status(data["text"], data["color"])
+
+            # 使窗口始终在最前面
+            self.status_window.attributes("-topmost", True)
+
+        def on_status_window_close(self):
+            """状态窗口关闭时的处理"""
+            self.status_window = None
+            self.status_btn.config(text="Status Monitor")
+
+        def update_status_display(self, status_type, text, color):
+            """更新状态显示（同时更新数据和窗口显示）"""
+            self.status_data[status_type] = {"text": text, "color": color}
+            
+            # 如果状态窗口存在，更新显示
+            if (self.status_window is not None and 
+                self.status_window.winfo_exists() and 
+                status_type in self.status_indicators):
+                self.status_indicators[status_type].set_status(text, color)
+            
+            # 更新主界面的指示灯
+            self.update_main_indicators()
+
+        def update_main_indicators(self):
+            """更新主界面上的状态指示灯"""
+            # 颜色映射
+            color_map = {
+                "red": "#ff4444",
+                "green": "#44ff44", 
+                "yellow": "#ffcc00",
+                "gray": "#888888",
+                "grey": "#888888"
+            }
+            
+            # 右侧指示灯 - 跟随chat状态
+            chat_color = self.status_data.get("chat", {}).get("color", "red")
+            chat_indicator_color = color_map.get(chat_color.lower(), chat_color)
+            self.chat_indicator_canvas.itemconfig(self.chat_indicator, fill=chat_indicator_color)
+            
+            # 左侧指示灯 - 综合状态逻辑
+            client_color = self.status_data.get("client", {}).get("color", "red")
+            network_color = self.status_data.get("network", {}).get("color", "red")
+            model_color = self.status_data.get("model", {}).get("color", "red")
+            http_color = self.status_data.get("http", {}).get("color", "red")
+            
+            # 检查除chat外的四个指示灯是否均为绿色
+            all_green = all(color == "green" for color in [client_color, network_color, model_color, http_color])
+            
+            # 检查除chat外的四个指示灯中，除了网络外的三个是否均为绿色
+            three_green_without_network = all(color == "green" for color in [client_color, model_color, http_color])
+            
+            # 检查除chat和model外的三个指示灯是否均为绿色
+            three_green_without_model = all(color == "green" for color in [client_color, network_color, http_color])
+            
+            if all_green:
+                overall_color = "#44ff44"  # 绿色 - 所有状态都是绿色
+            elif three_green_without_network and network_color == "yellow":
+                overall_color = "#ffcc00"  # 黄色 - 网络是黄色，其他都是绿色
+            elif three_green_without_model:
+                overall_color = "#ffcc00"  # 黄色 - model不是绿色，其他都是绿色
+            else:
+                overall_color = "#ff4444"  # 红色 - 其他情况
+                
+            self.overall_indicator_canvas.itemconfig(self.overall_indicator, fill=overall_color)
 
         def initialize_client(self):
+            """初始化客户端"""
             api_key = self.api_key_entry.get().strip()
             if not api_key:
-                messagebox.showerror("Error", "Please enter your API Key.")
-                self.update_client_status()
+                messagebox.showerror("Error", "Please enter an API key")
                 return
+
             try:
                 self.client = OpenAI(api_key=api_key, base_url=DEEPSEEK_API_BASE_URL_V1)
                 self.api_key = api_key
-                self.print_out("Client initialized successfully.")
                 
-                # 保存API Key到加密文件
+                # 保存API Key
                 if save_api_key_to_file(api_key):
-                    self.print_out("API Key已安全加密保存到本地。")
-                else:
-                    self.print_out("注意：无法保存API Key到本地文件。")
-
-                masked = "*" * len(api_key)
-                self.api_key_masked_label.config(text=f"API Key: {masked}")
-                self.api_key_masked_label.pack()
+                    self.print_out("API Key已安全加密并保存到本地文件。")
+                
+                # 隐藏输入框，显示掩码标签（左对齐）
                 self.api_key_entry.pack_forget()
-                self.api_key_masked_label.bind("<Button-3>", self.disable_copy)
-                self.api_key_masked_label.bind("<Control-c>", self.disable_copy)
-                self.api_key_masked_label.bind("<Control-Insert>", self.disable_copy)
+                
+                # 修改为完全星号显示，左对齐
+                masked_key = "*" * min(len(api_key), 32)  # 显示更多星号以便识别
+                self.api_key_masked_label.config(text=masked_key, anchor="w")  # 左对齐
+                self.api_key_masked_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+                
+                # 冻结初始化按钮而不是隐藏
+                self.init_btn.config(state=tk.DISABLED, text="Initialized")
+                
+                # 启用相关功能
+                self.refresh_models_btn.config(state=tk.NORMAL)
                 self.clear_apikey_btn.config(state=tk.NORMAL)
-                self.init_btn.config(state=tk.DISABLED)
+                
+                # 更新状态
                 self.update_client_status()
+                self.print_out("Client initialized successfully!")
+                
+                # 自动刷新模型列表
+                self.refresh_models()
+                
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to initialize client: {e}")
-                self.update_client_status()
+                messagebox.showerror("Error", f"Failed to initialize client: {str(e)}")
+                self.print_out(f"Client initialization failed: {str(e)}")
 
         def clear_api_key(self):
-            result = delete_api_key_file()
+            """清除API Key"""
+            result = messagebox.askyesno("Confirm", "Are you sure you want to clear the saved API key?\nThis will reset the client and require re-initialization.")
             if result:
-                self.print_out("API Key已从本地文件移除。")
-            else:
-                self.print_out("无法删除API Key文件。")
-                
-            self.api_key = ""
-            self.client = None
-            self.selected_model = None
-            self.messages = []
-            self.api_key_masked_label.pack_forget()
-            self.api_key_entry.pack()
-            self.api_key_entry.delete(0, tk.END)
-            self.clear_apikey_btn.config(state=tk.DISABLED)
-            self.init_btn.config(state=tk.NORMAL)
-            self.print_out("API Key cleared. Please enter a new API Key and initialize the client.")
-            self.update_client_status()
-            self.update_model_status()
-            self.update_chat_status("not_ready")
+                try:
+                    # 删除保存的API Key文件
+                    if delete_api_key_file():
+                        self.print_out("API Key file deleted successfully.")
+                    
+                    # 重置客户端状态
+                    self.client = None
+                    self.api_key = ""
+                    self.selected_model = None
+                    self.messages = []
+                    self.available_models = []
+                    
+                    # 恢复UI到初始状态
+                    self.api_key_masked_label.pack_forget()
+                    self.api_key_entry.delete(0, tk.END)
+                    self.api_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+                    
+                    # 恢复初始化按钮
+                    self.init_btn.config(state=tk.NORMAL, text="Initialize")
+                    
+                    # 重置模型选择
+                    self.model_var.set("Please select a model...")
+                    self.model_combobox['values'] = ()
+                    
+                    # 禁用相关功能
+                    self.refresh_models_btn.config(state=tk.DISABLED)
+                    self.clear_apikey_btn.config(state=tk.DISABLED)
+                    
+                    # 禁用输入框
+                    self.user_input.config(state=tk.DISABLED)
+                    self.user_input.delete("1.0", tk.END)
+                    
+                    # 更新所有状态
+                    self.update_client_status()
+                    self.update_model_status()
+                    self.update_chat_status("not_ready")
+                    self.update_buttons_state()
+                    
+                    self.print_out("API Key cleared. Please enter a new API key and initialize the client.")
+                    messagebox.showinfo("Success", "API Key cleared successfully. Please enter a new API key.")
+                    
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to clear API key: {str(e)}")
+                    self.print_out(f"Error clearing API key: {str(e)}")
 
-        def list_and_select_model(self):
+        # ===================== API 调用相关 =====================
+        def start_chat(self):
+            """开始聊天（GUI）"""
             if not self.client:
-                messagebox.showerror("Error", "Please initialize the client first.")
-                self.update_model_status()
+                messagebox.showerror("Error", "Please initialize client first")
                 return
+            if not self.selected_model:
+                messagebox.showerror("Error", "Please select a model first")
+                return
+
+            self.messages = []
+            self.user_input.config(state=tk.NORMAL)
+            self.user_input.focus_set()
+            self.update_chat_status("ready")
+            self.update_buttons_state()
+            self.print_out(f"Chat started with model: {self.selected_model}")
+            self.print_out("Type your message and press Send or Enter to chat.")
+
+        def refresh_models(self):
+            """刷新模型列表（GUI版本）"""
+            if not self.client:
+                messagebox.showerror("Error", "Please initialize client first")
+                return
+                
             try:
-                self.print_out("Fetching model list...")
+                self.print_out("Fetching available models...")
                 models_response = self.client.models.list()
+                
+                # 过滤模型
                 available_models = [model.id for model in models_response.data if
-                                    "chat" in model.id.lower() or "coder" in model.id.lower() or len(models_response.data) < 10]
+                                  "chat" in model.id.lower() or "coder" in model.id.lower() or len(models_response.data) < 10]
+                
                 if not available_models:
                     available_models = [model.id for model in models_response.data]
+                
                 if not available_models:
+                    self.print_out("No models found. Please check your API key.")
                     self.update_model_status("fetch_fail")
-                    manual_model = simpledialog.askstring("Enter Model Name", "No models found. Please enter model name (e.g., deepseek-chat):")
-                    if manual_model:
-                        self.selected_model = manual_model
-                        self.print_out(f"Model selected manually: {manual_model}")
-                        self.update_model_status()
-                    else:
-                        self.print_out("No model selected.")
-                        self.update_model_status()
                     return
-                model_choice = simpledialog.askinteger(
-                    "Select Model",
-                    "Available models:\n" + "\n".join([f"{i+1}. {mid}" for i, mid in enumerate(available_models)]) +
-                    f"\nEnter number (1-{len(available_models)}):"
-                )
-                if model_choice and 1 <= model_choice <= len(available_models):
-                    self.selected_model = available_models[model_choice-1]
-                    self.print_out(f"Model selected: {self.selected_model}")
-                    self.update_model_status()
-                else:
-                    self.print_out("No model selected.")
-                    self.update_model_status()
+                
+                self.available_models = available_models
+                self.model_combobox['values'] = available_models
+                
+                # 移除自动选择逻辑，保持未选择状态
+                # 如果当前选择的模型不在新列表中，则重置为未选择状态
+                if self.selected_model and self.selected_model not in available_models:
+                    self.selected_model = None
+                    self.model_var.set("Please select a model...")
+                
+                # 更新模型状态
+                self.update_model_status()
+                
+                self.print_out(f"Found {len(available_models)} models. Please select one to continue.")
+                self.update_buttons_state()
+                
             except Exception as e:
+                error_msg = str(e)
+                self.print_out(f"Failed to fetch models: {error_msg}")
                 self.update_model_status("fetch_fail")
-                manual_model = simpledialog.askstring("Enter Model Name", f"Failed to fetch models: {e}\nYou can enter model name manually (e.g., deepseek-chat):")
-                if manual_model:
-                    self.selected_model = manual_model
-                    self.print_out(f"Model selected manually: {manual_model}")
-                    self.update_model_status()
-                else:
-                    self.update_model_status("fetch_fail")
+                messagebox.showerror("Error", f"Failed to fetch models: {error_msg}")
+
+        def on_model_selected(self, event=None):
+            """模型选择事件处理"""
+            selected = self.model_var.get()
+            if selected and selected != "Please select a model...":
+                self.selected_model = selected
+                self.update_model_status()
+                self.update_buttons_state()
+                self.print_out(f"Selected model: {selected}")
+
+        def update_client_status(self):
+            """更新客户端状态"""
+            api_key_entered = bool(self.api_key_entry.get().strip())
+            
+            if self.client and self.api_key:
+                self.update_status_display("client", "Initialized", "green")
+            elif api_key_entered:
+                self.update_status_display("client", "API Key entered", "yellow")
+            else:
+                self.update_status_display("client", "No API Key", "red")
+
+        def network_status_loop(self):
+            """网络状态检查循环"""
+            while not self.network_thread_stop:
+                try:
+                    # 测量网络延迟
+                    import socket
+                    import time
+                    
+                    start_time = time.time()
+                    socket.create_connection(("api.deepseek.com", 443), timeout=5)
+                    end_time = time.time()
+                    
+                    # 计算延迟（毫秒）
+                    latency_ms = round((end_time - start_time) * 1000, 1)
+                    
+                    # 根据延迟确定状态颜色
+                    if latency_ms < 200:
+                        color = "green"
+                    elif latency_ms < 500:
+                        color = "yellow"
+                    else:
+                        color = "red"
+                    
+                    status_text = f"Connected ({latency_ms}ms)"
+                    
+                    # 修复lambda闭包问题 - 使用函数而不是lambda
+                    def update_network_status(text, c):
+                        self.update_status_display("network", text, c)
+                    
+                    self.master.after(0, lambda: update_network_status(status_text, color))
+                    
+                except socket.timeout:
+                    self.master.after(0, lambda: self.update_status_display("network", "Timeout", "red"))
+                except Exception:
+                    self.master.after(0, lambda: self.update_status_display("network", "Disconnected", "red"))
+                
+                # 等待30秒再次检查
+                for _ in range(30):
+                    if self.network_thread_stop:
+                        break
+                    time.sleep(1)
+
+        def update_model_status(self, status=None):
+            """更新模型状态"""
+            if not self.client:
+                self.update_status_display("model", "Not available", "red")
+            elif status == "fetch_fail":
+                self.update_status_display("model", "Failed to fetch", "yellow")
+            elif self.selected_model:
+                self.update_status_display("model", f"Selected: {self.selected_model}", "green")
+            elif self.available_models:
+                self.update_status_display("model", "Available (none selected)", "red")
+            else:
+                self.update_status_display("model", "Not selected", "red")
+
+        def update_network_status(self):
+            """更新网络状态"""
+            self.update_status_display("network", "Checking...", "gray")
+
+        def update_http_status(self, status_code=None):
+            """更新HTTP状态"""
+            if status_code is None:
+                # 默认状态设为绿色
+                self.update_status_display("http", "OK", "green")
+            elif status_code == 200:
+                self.update_status_display("http", "OK (200)", "green")
+            elif 400 <= status_code <= 499:
+                self.update_status_display("http", f"Client Error ({status_code})", "red")
+            elif 500 <= status_code <= 599:
+                self.update_status_display("http", f"Server Error ({status_code})", "yellow")
+            elif status_code == 0:
+                self.update_status_display("http", "Network Error", "red")
+            else:
+                self.update_status_display("http", f"Status {status_code}", "yellow")
+
+        def update_chat_status(self, status):
+            """更新聊天状态"""
+            status_map = {
+                "not_ready": ("Not ready", "red"),
+                "ready": ("Ready", "green"),
+                "chatting": ("Chatting", "yellow"),
+                "streaming": ("Streaming", "yellow")
+            }
+            text, color = status_map.get(status, ("Unknown", "gray"))
+            self.update_status_display("chat", text, color)
+
+        def update_buttons_state(self):
+            """更新按钮状态"""
+            # 检查是否可以开始聊天
+            can_chat = bool(self.client and self.selected_model)
+            
+            # 更新聊天相关按钮状态
+            if hasattr(self, 'chat_btn'):
+                self.chat_btn.config(state=tk.NORMAL if can_chat else tk.DISABLED)
+            
+            if hasattr(self, 'new_btn'):
+                self.new_btn.config(state=tk.NORMAL if can_chat else tk.DISABLED)
+            
+            # 发送按钮状态（需要同时检查输入框内容）
+            if hasattr(self, 'send_btn'):
+                content = ""
+                try:
+                    content = self.user_input.get("1.0", tk.END).strip()
+                except:
+                    pass
+                send_enabled = can_chat and bool(content)
+                self.send_btn.config(state=tk.NORMAL if send_enabled else tk.DISABLED)
 
         def query_balance(self):
-            if not self.api_key:
-                messagebox.showerror("Error", "Please initialize the client first.")
+            """查询余额"""
+            if not self.client or not self.api_key:
+                messagebox.showerror("Error", "Please initialize client first")
                 return
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Accept": "application/json"
-            }
+                
             try:
                 self.print_out("Querying account balance...")
-                response = requests.get(DEEPSEEK_BALANCE_URL, headers=headers)
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Accept": "application/json"
+                }
+                response = requests.get(DEEPSEEK_BALANCE_URL, headers=headers, timeout=10)
+                
+                # 更新HTTP状态
                 self.update_http_status(response.status_code)
-                response.raise_for_status()
-                balance_data = response.json()
-                if balance_data.get("is_available", False):
-                    self.print_out("Service available.")
-                    balance_infos_list = balance_data.get("balance_infos", [])
-                    if balance_infos_list:
-                        for idx, info in enumerate(balance_infos_list):
-                            self.print_out(f"Balance Info #{idx+1}:")
-                            self.print_out(f"  Currency: {info.get('currency', 'N/A')}")
-                            self.print_out(f"  Total Balance: {info.get('total_balance', 'N/A')}")
-                            self.print_out(f"  Granted Balance: {info.get('granted_balance', 'N/A')}")
-                            self.print_out(f"  Topped-up Balance: {info.get('topped_up_balance', 'N/A')}")
+                
+                if response.status_code == 200:
+                    balance_data = response.json()
+                    
+                    # 检查服务可用性
+                    if balance_data.get("is_available", False):
+                        self.print_out("Service Available: Yes")
+                        balance_infos_list = balance_data.get("balance_infos", [])
+                        
+                        if balance_infos_list:
+                            for idx, info in enumerate(balance_infos_list):
+                                self.print_out(f"Balance Info #{idx+1}:")
+                                self.print_out(f"  Currency: {info.get('currency', 'N/A')}")
+                                self.print_out(f"  Total Balance: {info.get('total_balance', 'N/A')}")
+                                self.print_out(f"  Granted Balance: {info.get('granted_balance', 'N/A')}")
+                                self.print_out(f"  Topped-up Balance: {info.get('topped_up_balance', 'N/A')}")
+                                
+                            # 在输出区域显示主要余额信息，不使用弹窗
+                            main_balance = balance_infos_list[0].get('total_balance', 'N/A')
+                            currency = balance_infos_list[0].get('currency', 'USD')
+                            self.print_out(f"**Total Balance: {main_balance} {currency}**")
+                        else:
+                            self.print_out("No detailed balance information found.")
                     else:
-                        self.print_out("No detailed balance information found.")
+                        self.print_out("Service Available: No")
+                        if "message" in balance_data:
+                            self.print_out(f"API Message: {balance_data['message']}")
+                        else:
+                            self.print_out("Service not available - possibly due to service unavailability or no balance info.")
                 else:
-                    self.print_out("Service not available.")
-                    if "message" in balance_data:
-                        self.print_out(f"API Message: {balance_data['message']}")
-                    elif not balance_data.get("balance_infos") and not balance_data.get("is_available", True):
-                        self.print_out("Possibly due to service unavailability or no balance info.")
+                    # 处理非200状态码
+                    error_msg = f"HTTP {response.status_code}"
+                    self.print_out(f"Failed to query balance: {error_msg}")
+                    
+                    try:
+                        error_details = response.json()
+                        if "message" in error_details:
+                            error_msg += f" - {error_details['message']}"
+                        self.print_out(f"Error details: {json.dumps(error_details, indent=2, ensure_ascii=False)}")
+                    except json.JSONDecodeError:
+                        self.print_out(f"Response content: {response.text}")
+                    
             except requests.exceptions.HTTPError as http_err:
                 code = http_err.response.status_code if http_err.response is not None else None
                 self.update_http_status(code)
-                self.print_out(f"HTTP error: {http_err}")
+                error_msg = f"HTTP error: {http_err}"
+                self.print_out(error_msg)
+                
                 if http_err.response is not None:
                     self.print_out(f"Status code: {http_err.response.status_code}")
                     try:
@@ -429,441 +1226,422 @@ if USE_GUI:
                         self.print_out(f"Error details: {json.dumps(error_details, indent=2, ensure_ascii=False)}")
                     except json.JSONDecodeError:
                         self.print_out(f"Response content: {http_err.response.text}")
+                
             except requests.exceptions.RequestException as e:
                 self.update_http_status(0)
-                self.print_out(f"Request failed: {e}")
+                error_msg = f"Request failed: {e}"
+                self.print_out(error_msg)
+                
             except json.JSONDecodeError:
                 self.update_http_status(0)
-                self.print_out("Balance response is not valid JSON.")
+                error_msg = "Balance response is not valid JSON."
+                self.print_out(error_msg)
+                
             except Exception as e:
                 self.update_http_status(0)
-                self.print_out(f"Unknown error: {e}")
+                error_msg = f"Unknown error: {e}"
+                self.print_out(error_msg)
 
-        def start_chat(self):
-            if not self.client:
-                self.print_out("Please initialize the client first.")
-                self.update_chat_status("not_ready")
-                self.user_input.config(state=tk.DISABLED)
-                self.update_buttons_state()
+        def clear_output(self):
+            """清空输出区域"""
+            if hasattr(self.output, 'clear_all'):
+                self.output.clear_all()
+            else:
+                self.output.delete(1.0, tk.END)
+
+        def toggle_markdown_rendering(self):
+            """切换Markdown渲染"""
+            self.markdown_enabled = not self.markdown_enabled
+            status_text = "ON" if self.markdown_enabled else "OFF"
+            self.markdown_btn.config(text=f"Markdown: {status_text}")
+            
+            # 立即切换当前输出的渲染模式
+            if hasattr(self.output, 'switch_render_mode'):
+                self.output.switch_render_mode(self.markdown_enabled)
+            
+            self.print_out(f"Markdown rendering: {status_text}")
+
+        def print_out(self, message, end="\n"):
+            """输出信息到输出区域"""
+            if not hasattr(self, 'output'):
                 return
-            if not self.selected_model:
-                self.print_out("Please select a model first.")
-                self.update_chat_status("not_ready")
-                self.user_input.config(state=tk.DISABLED)
-                self.update_buttons_state()
-                return
-            self.print_out(f"\nStarting chat with model '{self.selected_model}' (Enter to send, Ctrl+Enter for newline)")
-            self.messages = []
-            self.user_input.config(state=tk.NORMAL)
-            self.user_input.delete("1.0", tk.END)
-            self.user_input.focus_set()
-            self.update_chat_status("ready")
-            self.update_buttons_state()
+                
+            # 添加时间戳
+            import datetime
+            timestamp = datetime.datetime.now().strftime("[%H:%M:%S] ")
+            full_message = timestamp + str(message)
+            
+            # 使用新的渲染方法
+            if hasattr(self.output, 'append_and_render'):
+                self.output.append_and_render(full_message, end, self.markdown_enabled)
+            else:
+                # 回退到普通文本模式
+                self.output.insert(tk.END, full_message + end)
+                self.output.see(tk.END)
 
         def send_user_input(self, event=None):
-            if self.user_input["state"] != tk.NORMAL:
+            """发送用户输入"""
+            if event and event.keysym == "Return" and not (event.state & 0x4):  # 不是Ctrl+Enter
+                # 检查是否按下了Shift
+                if event.state & 0x1:  # Shift+Enter，插入换行
+                    return "break"
+            
+            user_message = self.user_input.get("1.0", tk.END).strip()
+            if not user_message:
                 return "break"
-            if event and (event.state & 0x0004 or event.state & 0x0001):  # Ctrl或Shift
-                return
-            text = self.user_input.get("1.0", tk.END).strip()
-            if text:
-                self.handle_user_input(text)
-                self.user_input.delete("1.0", tk.END)
-                self.send_btn.config(state=tk.DISABLED)
+                
+            if not self.client or not self.selected_model:
+                messagebox.showerror("Error", "Please initialize client and select model first")
+                return "break"
+                
+            # 清空输入框
+            self.user_input.delete("1.0", tk.END)
+            
+            # 添加用户消息到对话历史
+            self.messages.append({"role": "user", "content": user_message})
+            
+            # 显示用户输入
+            self.print_out(f"You: {user_message}")
+            
+            # 开始流式对话
+            self.start_streaming_chat()
+            
             return "break"
 
-        def handle_user_input(self, text):
-            if not self.client:
-                self.print_out("Please initialize the client first.")
-                self.update_chat_status("not_ready")
-                self.user_input.config(state=tk.DISABLED)
-                self.update_buttons_state()
-                return
-            if not self.selected_model:
-                self.print_out("Please select a model first.")
-                self.update_chat_status("not_ready")
-                self.user_input.config(state=tk.DISABLED)
-                self.update_buttons_state()
-                return
-            self.user_input.config(state=tk.NORMAL)
-            self.messages.append({"role": "user", "content": text})
-            self.print_out(f"You: {text}")
-            self.update_buttons_state()
+        def start_streaming_chat(self):
+            """开始流式聊天"""
+            self.streaming_stopped = False
+            self.update_chat_status("streaming")
+            
+            # 禁用发送按钮，启用停止按钮
+            self.send_btn.config(state=tk.DISABLED)
+            self.stop_btn.config(state=tk.NORMAL)
+            
+            # 在新线程中进行API调用
+            thread = threading.Thread(target=self._streaming_chat_worker, daemon=True)
+            thread.start()
+
+        def _streaming_chat_worker(self):
+            """流式聊天工作线程"""
             try:
-                self.print_out("Model: ")
-                assistant_response_content = ""
-                self.update_chat_status("streaming")
-                stream = self.client.chat.completions.create(
+                response = self.client.chat.completions.create(
                     model=self.selected_model,
                     messages=self.messages,
                     stream=True,
-                    max_tokens=2048,
-                    temperature=1.1
+                    max_tokens=4096,
+                    temperature=0.7
                 )
-                for chunk in stream:
-                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                        content_piece = chunk.choices[0].delta.content
-                        self.output.insert(tk.END, content_piece)
-                        self.output.see(tk.END)
-                        self.master.update_idletasks()
-                        assistant_response_content += content_piece
-                self.print_out("")
-                if assistant_response_content:
-                    self.messages.append({"role": "assistant", "content": assistant_response_content})
-                self.update_chat_status("ready")
-                self.user_input.config(state=tk.NORMAL)
-                self.user_input.focus_set()
-                self.update_buttons_state()
+                
+                assistant_message = ""
+                self.master.after(0, lambda: self.print_out("Assistant: ", end=""))
+                
+                for chunk in response:
+                    if self.streaming_stopped:
+                        break
+                        
+                    if chunk.choices[0].delta.content is not None:
+                        content = chunk.choices[0].delta.content
+                        assistant_message += content
+                        # 在主线程中更新UI
+                        self.master.after(0, lambda c=content: self._append_streaming_content(c))
+                
+                if not self.streaming_stopped:
+                    # 添加助手回复到对话历史
+                    self.messages.append({"role": "assistant", "content": assistant_message})
+                    self.master.after(0, lambda: self.print_out("", end="\n"))  # 换行
+                    
             except Exception as e:
-                self.print_out(f"\nChat error: {e}")
-                if "Incorrect API key" in str(e) or "authentication" in str(e).lower():
-                    self.print_out("Please check if your API Key is correct.")
-                self.print_out("You can retry or type /exit or /new.")
-                self.update_chat_status("not_ready")
-                self.user_input.config(state=tk.NORMAL)
-                self.update_buttons_state()
+                error_msg = f"Streaming chat error: {str(e)}"
+                self.master.after(0, lambda: self.print_out(error_msg))
+                
+            finally:
+                # 恢复按钮状态
+                self.master.after(0, self._restore_chat_buttons)
 
-        def on_input_change(self, event=None):
-            content = self.user_input.get("1.0", tk.END).strip()
-            if content and self.user_input["state"] == tk.NORMAL:
-                self.send_btn.config(state=tk.NORMAL)
+        def _append_streaming_content(self, content):
+            """在主线程中追加流式内容"""
+            if hasattr(self.output, 'append_raw_text'):
+                self.output.append_raw_text(content, end="")
+                # 根据当前渲染模式重新渲染
+                if self.markdown_enabled:
+                    self.output.render_as_markdown()
+                else:
+                    self.output.render_as_plain_text()
             else:
-                self.send_btn.config(state=tk.DISABLED)
+                self.output.insert(tk.END, content)
+                self.output.see(tk.END)
 
-        def update_buttons_state(self):
-            content = self.user_input.get("1.0", tk.END).strip()
-            if self.user_input["state"] == tk.NORMAL and content:
-                self.send_btn.config(state=tk.NORMAL)
-            else:
-                self.send_btn.config(state=tk.DISABLED)
-            self.end_btn.config(state=tk.NORMAL)
-            if self.messages:
-                self.new_btn.config(state=tk.NORMAL)
-            else:
-                self.new_btn.config(state=tk.DISABLED)
+        def _restore_chat_buttons(self):
+            """恢复聊天按钮状态"""
+            self.send_btn.config(state=tk.NORMAL)
+            self.stop_btn.config(state=tk.DISABLED)
+            self.update_chat_status("ready")
 
-        def end_chat(self):
-            self.print_out("Chat ended.")
-            self.update_chat_status("not_ready")
-            self.user_input.delete("1.0", tk.END)
-            if not self.client:
-                self.user_input.config(state=tk.DISABLED)
-            else:
-                self.user_input.config(state=tk.NORMAL)
-            self.update_buttons_state()
+        def stop_streaming(self):
+            """停止流式输出"""
+            self.streaming_stopped = True
+            self.print_out("Streaming stopped by user.")
+            self._restore_chat_buttons()
 
         def start_new_session(self):
-            self.print_out("New session started.")
+            """开始新会话"""
             self.messages = []
-            self.user_input.delete("1.0", tk.END)
-            self.user_input.config(state=tk.NORMAL)
-            self.user_input.focus_set()
-            self.update_chat_status("ready")
+            self.print_out("Started new chat session.")
+            if self.selected_model:
+                self.print_out(f"Current model: {self.selected_model}")
+
+        def end_chat(self):
+            """结束聊天"""
+            self.messages = []
+            self.user_input.config(state=tk.DISABLED)
+            self.update_chat_status("not_ready")
             self.update_buttons_state()
+            self.print_out("Chat ended.")
 
-        def update_client_status(self):
-            if not self.api_key_entry.get().strip() or self.api_key_entry.get().strip() == "API KEY HERE":
-                self.status_client.set_status("No API Key", "red")
-            elif self.client is None:
-                self.status_client.set_status("API Key entered", "yellow")
+        def on_input_change(self, event=None):
+            """输入框内容改变事件"""
+            # 检查输入框是否有内容来控制发送按钮
+            content = ""
+            try:
+                content = self.user_input.get("1.0", tk.END).strip()
+            except:
+                pass
+            
+            if content and self.client and self.selected_model:
+                self.send_btn.config(state=tk.NORMAL)
             else:
-                self.status_client.set_status("Initialized", "green")
+                self.send_btn.config(state=tk.DISABLED)
+            
+            # 更新客户端状态（检查API Key输入）
+            self.update_client_status()
 
-        def update_network_status(self, latency=None, status=None):
-            if status == "fail":
-                self.status_network.set_status("Unreachable", "red")
-            elif latency is not None:
-                if latency < 200:
-                    self.status_network.set_status(f"OK ({latency} ms)", "green")
-                elif latency < 600:
-                    self.status_network.set_status(f"High latency ({latency} ms)", "yellow")
+        def on_api_key_change(self, event=None):
+            """API Key输入框内容改变事件"""
+            self.update_client_status()
+
+        # ========== 字体大小调节方法 ==========
+        def decrease_font_size(self):
+            """减小字体大小"""
+            if self.output_font_size > 8:
+                self.output_font_size -= 1
+                self.update_output_font()
+
+        def increase_font_size(self):
+            """增大字体大小"""
+            if self.output_font_size < 24:
+                self.output_font_size += 1
+                self.update_output_font()
+
+        def set_font_size_from_entry(self, event=None):
+            """从输入框设置字体大小"""
+            try:
+                new_size = self.font_size_var.get()
+                if 8 <= new_size <= 24:
+                    self.output_font_size = new_size
+                    self.update_output_font()
                 else:
-                    self.status_network.set_status(f"Very high latency ({latency} ms)", "yellow")
-            else:
-                self.status_network.set_status("Checking...", "gray")
+                    # 如果输入的大小超出范围，恢复为当前大小
+                    self.font_size_var.set(self.output_font_size)
+            except tk.TclError:
+                # 如果输入的不是数字，恢复为当前大小
+                self.font_size_var.set(self.output_font_size)
 
-        def update_model_status(self, error=None):
-            if error == "fetch_fail":
-                self.status_model.set_status("Failed to fetch", "yellow")
-            elif self.selected_model:
-                self.status_model.set_status(f"Selected ({self.selected_model})", "green")
-            else:
-                self.status_model.set_status("Not selected", "red")
-
-        def update_http_status(self, code=None):
-            if code is None:
-                self.status_http.set_status("OK", "green")
-            elif 400 <= code <= 499:
-                self.status_http.set_status(f"Client Error ({code})", "red")
-            elif 500 <= code <= 599:
-                self.status_http.set_status(f"Server Error ({code})", "yellow")
-            else:
-                self.status_http.set_status(f"OK ({code})", "green")
-
-        def update_chat_status(self, state):
-            if state == "not_ready":
-                self.status_chat.set_status("Not ready", "red")
-            elif state == "streaming":
-                self.status_chat.set_status("Streaming...", "yellow")
-            elif state == "ready":
-                self.status_chat.set_status("Ready", "green")
-            else:
-                self.status_chat.set_status("Unknown", "gray")
-
-        def network_status_loop(self):
-            while not self.network_thread_stop:
-                latency = None
-                status = None
-                try:
-                    import urllib.parse
-                    url = urllib.parse.urlparse(DEEPSEEK_API_BASE_URL_V1)
-                    host = url.hostname
-                    result = subprocess.run(
-                        ["ping", "-n", "1", "-w", "1000", host],
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-                    )
-                    if result.returncode == 0:
-                        for line in result.stdout.splitlines():
-                            if "平均" in line or "Average" in line:
-                                ms = [int(s.replace("ms", "").replace("毫秒", "").strip()) for s in line.split() if s.replace("ms", "").replace("毫秒", "").strip().isdigit()]
-                                if ms:
-                                    latency = ms[-1]
-                                    break
-                            elif "TTL=" in line and "time=" in line:
-                                idx = line.find("time=")
-                                if idx != -1:
-                                    time_part = line[idx+5:].split()[0]
-                                    latency = int(time_part.replace("ms", ""))
-                                    break
-                        if latency is None:
-                            latency = 0
+        def update_output_font(self):
+            """更新输出区域字体"""
+            try:
+                # 更新字体大小变量显示
+                self.font_size_var.set(self.output_font_size)
+                
+                # 更新输出区域字体
+                new_font = (self.output_font_family, self.output_font_size)
+                self.output.config(font=new_font)
+                
+                # 如果是MarkdownText，还需要更新Markdown样式字体
+                if hasattr(self.output, 'update_markdown_font'):
+                    self.output.update_markdown_font(self.output_font_family, self.output_font_size)
+                    # 重新渲染以应用新字体
+                    if self.markdown_enabled:
+                        self.output.render_as_markdown()
                     else:
-                        status = "fail"
-                except Exception:
-                    status = "fail"
-                self.master.after(0, self.update_network_status, latency, status)
-                time.sleep(5)
+                        self.output.render_as_plain_text()
+                        
+            except Exception as e:
+                print(f"Error updating font: {e}")
 
 # ===================== CLI 部分 =====================
-def get_api_key():
-    # 首先尝试从文件加载
-    saved_api_key = load_api_key_from_file()
-    if saved_api_key:
-        print(f"已从本地文件加载API Key (已加密保存)")
-        use_saved = input("是否使用已保存的API Key? (y/n): ").lower().strip()
-        if use_saved == 'y' or use_saved == '':
-            return saved_api_key
-    
-    api_key = input("Enter your DeepSeek API Key: ").strip()
-    while not api_key:
-        print("API Key cannot be empty.")
-        api_key = input("Enter your DeepSeek API Key: ").strip()
-    
-    # 询问是否保存API Key
-    save_key = input("是否保存API Key到本地文件? (y/n): ").lower().strip()
-    if save_key == 'y' or save_key == '':
-        if save_api_key_to_file(api_key):
-            print("API Key已安全加密并保存到本地文件。")
-        else:
-            print("保存API Key失败。")
-    
-    return api_key
+class DeepSeekCLI:
+    """命令行版本的DeepSeek客户端"""
+    def __init__(self):
+        self.api_key = ""
+        self.client = None
+        self.selected_model = None
+        self.messages = []
+        self.available_models = []
 
-def initialize_client(api_key):
-    try:
-        return OpenAI(api_key=api_key, base_url=DEEPSEEK_API_BASE_URL_V1)
-    except Exception as e:
-        print(f"Client initialization failed: {e}")
-        return None
+    def load_api_key(self):
+        """加载API密钥"""
+        # 首先尝试从文件加载
+        saved_key = load_api_key_from_file()
+        if saved_key:
+            self.api_key = saved_key
+            return True
+        
+        # 如果没有保存的密钥，提示用户输入
+        while not self.api_key:
+            self.api_key = input("Please enter your DeepSeek API key: ").strip()
+            if self.api_key:
+                # 询问是否保存
+                save_choice = input("Save API key for future use? (y/n): ").strip().lower()
+                if save_choice == 'y':
+                    if save_api_key_to_file(self.api_key):
+                        print("API key saved successfully.")
+                    else:
+                        print("Failed to save API key.")
+                return True
+        return False
 
-def list_and_select_model(client):
-    if not client:
-        print("Client not initialized.")
-        return None
-    try:
-        print("\nFetching available models...")
-        models_response = client.models.list()
-        available_models = [model.id for model in models_response.data if
-                            "chat" in model.id.lower() or "coder" in model.id.lower() or len(models_response.data) < 10]
-        if not available_models:
-            available_models = [model.id for model in models_response.data]
-        if not available_models:
-            print("Failed to fetch model list. Check API key and connection.")
-            manual_model = input("Enter model name (e.g., deepseek-chat): ")
-            return manual_model if manual_model else None
-        print("Available models:")
-        for i, model_id in enumerate(available_models):
-            print(f"{i + 1}. {model_id}")
+    def initialize_client(self):
+        """初始化客户端"""
+        try:
+            self.client = OpenAI(api_key=self.api_key, base_url=DEEPSEEK_API_BASE_URL_V1)
+            print("Client initialized successfully!")
+            return True
+        except Exception as e:
+            print(f"Failed to initialize client: {e}")
+            return False
+
+    def fetch_models(self):
+        """获取可用模型"""
+        try:
+            print("Fetching available models...")
+            models_response = self.client.models.list()
+            
+            # 过滤模型
+            available_models = [model.id for model in models_response.data if
+                              "chat" in model.id.lower() or "coder" in model.id.lower() or len(models_response.data) < 10]
+            
+            if not available_models:
+                available_models = [model.id for model in models_response.data]
+            
+            self.available_models = available_models
+            print(f"Found {len(available_models)} models:")
+            for i, model in enumerate(available_models, 1):
+                print(f"  {i}. {model}")
+            
+            return True
+        except Exception as e:
+            print(f"Failed to fetch models: {e}")
+            return False
+
+    def select_model(self):
+        """选择模型"""
         while True:
             try:
-                choice_input = input(f"Select a model by number 1-{len(available_models)}: ")
-                if not choice_input:
-                    print("No model selected, using last selected or default.")
-                    return None
-                choice = int(choice_input)
-                if 1 <= choice <= len(available_models):
-                    selected_model = available_models[choice - 1]
-                    print(f"Model selected: {selected_model}")
-                    return selected_model
+                choice = input(f"Select a model (1-{len(self.available_models)}): ").strip()
+                model_index = int(choice) - 1
+                if 0 <= model_index < len(self.available_models):
+                    self.selected_model = self.available_models[model_index]
+                    print(f"Selected model: {self.selected_model}")
+                    return True
                 else:
-                    print("Invalid choice.")
+                    print("Invalid choice. Please try again.")
             except ValueError:
-                print("Please enter a number.")
-    except Exception as e:
-        print(f"Failed to fetch model list: {e}")
-        manual_model = input("Enter model name (leave blank to cancel): ")
-        return manual_model if manual_model else None
+                print("Please enter a valid number.")
+            except KeyboardInterrupt:
+                print("\nExiting...")
+                return False
 
-def query_balance(api_key):
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "application/json"
-    }
-    try:
-        print("\nQuerying account balance...")
-        response = requests.get(DEEPSEEK_BALANCE_URL, headers=headers)
-        response.raise_for_status()
-        balance_data = response.json()
-        print("Account Balance Information:")
-        if balance_data.get("is_available", False):
-            print("  Service Available: Yes")
-            balance_infos_list = balance_data.get("balance_infos", [])
-            if balance_infos_list:
-                for idx, info in enumerate(balance_infos_list):
-                    print(f"\n  Balance Info #{idx + 1}:")
-                    print(f"    Currency: {info.get('currency', 'N/A')}")
-                    print(f"    Total Balance: {info.get('total_balance', 'N/A')}")
-                    print(f"    Granted Balance: {info.get('granted_balance', 'N/A')}")
-                    print(f"    Topped-up Balance: {info.get('topped_up_balance', 'N/A')}")
-            else:
-                print("  Could not retrieve detailed balance entries.")
-        else:
-            print("  Service Available: No")
-            if "message" in balance_data:
-                print(f"  API Message: {balance_data['message']}")
-            elif not balance_data.get("balance_infos") and not balance_data.get("is_available", True):
-                print("  Possibly due to service unavailability or no balance info.")
-    except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP error occurred while querying balance: {http_err}")
-        if http_err.response is not None:
-            print(f"Response status code: {http_err.response.status_code}")
+    def start_chat(self):
+        """开始聊天会话"""
+        print(f"Starting chat with {self.selected_model}")
+        print("Type 'quit' to exit, 'new' to start a new session")
+        print("-" * 50)
+        
+        while True:
             try:
-                error_details = http_err.response.json()
-                print(f"Error details: {json.dumps(error_details, indent=2)}")
-            except json.JSONDecodeError:
-                print(f"Response content: {http_err.response.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to query balance: {e}")
-    except json.JSONDecodeError:
-        error_response_text = "N/A"
-        response = 'null'
-        if 'response' in locals() and hasattr(response, 'text'):
-            error_response_text = response.text
-        print(f"Failed to parse balance response, not valid JSON:\n{error_response_text}")
-    except Exception as e:
-        print(f"Unknown error occurred while querying balance: {e}")
-
-def stream_chat(client, model_id):
-    if not client:
-        print("Client not initialized.")
-        return
-    if not model_id or model_id == 'null':
-        print("No model selected. Please choose a model first.")
-        return
-    print(f"\nStarting chat with model '{model_id}' (type '/exit' to end, '/new' for a new conversation)...")
-    messages = []
-    while True:
-        try:
-            user_input = input("You: ")
-            if user_input.lower() == '/exit':
-                print("Ending conversation.")
-                break
-            if user_input.lower() == '/new':
-                print("Starting new conversation...")
-                messages = []
-                continue
-            messages.append({"role": "user", "content": user_input})
-            print("Model: ", end="", flush=True)
-            assistant_response_content = ""
-            stream = client.chat.completions.create(
-                model=model_id,
-                messages=messages,
-                stream=True,
-                max_tokens=2048,
-                temperature=1.1
-            )
-            for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    content_piece = chunk.choices[0].delta.content
-                    print(content_piece, end="", flush=True)
-                    assistant_response_content += content_piece
-            print()
-            if assistant_response_content:
-                messages.append({"role": "assistant", "content": assistant_response_content})
-        except Exception as e:
-            print(f"\nError during chat: {e}")
-            if "Incorrect API key" in str(e) or "authentication" in str(e).lower():
-                print("Please check if your API key is correct.")
-            print("Try again or type '/exit' or '/new'.")
-
-def clear_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-def main_cli():
-    print("DeepSeek API client Version 0.2.1")
-    api_key = get_api_key()
-    if not api_key:
-        print("No API key provided, exiting.")
-        return
-    client = initialize_client(api_key)
-    if not client:
-        return
-    selected_model = None
-    print(f"Default model set to: {selected_model}")
-    while True:
-        clear_screen()
-        print("\nPlease select an option:")
-        print("1. List and select model")
-        print("2. Query account balance")
-        print(f"3. Start chat (Current model: {selected_model})")
-        print("4. Exit")
-        choice = input("Enter your choice (1-4): ")
-        if choice == '1':
-            clear_screen()
-            new_model = list_and_select_model(client)
-            if new_model:
-                selected_model = new_model
-        elif choice == '2':
-            clear_screen()
-            query_balance(api_key)
-            input("\nPress any key to return to the main menu...")
-            clear_screen()
-        elif choice == '3':
-            if not selected_model:
-                clear_screen()
-                print("Please select a model first (option 1).")
-                new_model = list_and_select_model(client)
-                if new_model:
-                    selected_model = new_model
-                else:
-                    print("Cannot start chat, no model selected.")
+                user_input = input("You: ").strip()
+                
+                if user_input.lower() == 'quit':
+                    break
+                elif user_input.lower() == 'new':
+                    self.messages = []
+                    print("Started new chat session.")
                     continue
-            stream_chat(client, selected_model)
-        elif choice == '4':
-            break
-        elif choice == '/clear':
-            clear_screen()
-        else:
-            clear_screen()
-            print("[error] Invalid option, please try again.")
+                elif not user_input:
+                    continue
+                
+                # 添加用户消息
+                self.messages.append({"role": "user", "content": user_input})
+                
+                # 获取AI回复
+                print("Assistant: ", end="", flush=True)
+                response = self.client.chat.completions.create(
+                    model=self.selected_model,
+                    messages=self.messages,
+                    stream=True,
+                    max_tokens=4096,
+                    temperature=0.7
+                )
+                
+                assistant_message = ""
+                for chunk in response:
+                    if chunk.choices[0].delta.content is not None:
+                        content = chunk.choices[0].delta.content
+                        print(content, end="", flush=True)
+                        assistant_message += content
+                
+                print()  # 换行
+                
+                # 添加助手回复到对话历史
+                self.messages.append({"role": "assistant", "content": assistant_message})
+                
+            except KeyboardInterrupt:
+                print("\nGoodbye!")
+                break
+            except Exception as e:
+                print(f"Error: {e}")
 
+    def run(self):
+        """运行CLI版本"""
+        print("DeepSeek CLI Client v0.7.2")
+        print("=" * 30)
+        
+        # 加载API密钥
+        if not self.load_api_key():
+            return
+        
+        # 初始化客户端
+        if not self.initialize_client():
+            return
+        
+        # 获取模型列表
+        if not self.fetch_models():
+            return
+        
+        # 选择模型
+        if not self.select_model():
+            return
+        
+        # 开始聊天
+        self.start_chat()
+
+# ===================== 主程序入口 =====================
 def main():
     if USE_GUI:
         root = tk.Tk()
         app = DeepSeekGUI(root)
+        
+        # 设置窗口关闭事件
+        def on_closing():
+            if hasattr(app, 'network_thread_stop'):
+                app.network_thread_stop = True
+            root.destroy()
+        
+        root.protocol("WM_DELETE_WINDOW", on_closing)
         root.mainloop()
     else:
-        main_cli()
+        cli = DeepSeekCLI()
+        cli.run()
 
 if __name__ == "__main__":
     main()
