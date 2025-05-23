@@ -1,5 +1,8 @@
 # DeepSeek API Client
 
+> **新测试版本可用**  
+> 请参阅[详细文档](./rev/readme.md)以获取最新内容。
+
 本项目包含两个主要程序：
 
 - `main.py`：基于命令行的 DeepSeek API 客户端
