@@ -179,7 +179,7 @@ if USE_GUI:
             # 主窗口其余内容
             self.footer_label = tk.Label(
                 master,
-                text="DeepSeek API Client GUI v0.5.4 © 2025 ELT Group",
+                text="DeepSeek API Client GUI v0.6.1 © 2025 ELT Group",
                 font=("Arial", 8),
                 fg="gray"
             )
