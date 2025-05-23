@@ -25,6 +25,8 @@ import requests
 import threading
 import subprocess
 import time
+import base64
+import hashlib
 
 # 判断是否需要导入tkinter
 USE_GUI = "--gui" in sys.argv or (not "--cli" in sys.argv)
@@ -32,11 +34,94 @@ USE_GUI = "--gui" in sys.argv or (not "--cli" in sys.argv)
 if USE_GUI:
     import tkinter as tk
     from tkinter import messagebox, simpledialog, scrolledtext
+    # 导入加密需要的库
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError:
+        print("cryptography库未安装，API Key将无法加密。请使用 pip install cryptography 安装。")
+        # 继续执行，但加密功能将降级
 
 from openai import OpenAI
 
 DEEPSEEK_API_BASE_URL_V1 = "https://api.deepseek.com/v1"
 DEEPSEEK_BALANCE_URL = "https://api.deepseek.com/user/balance"
+API_KEY_FILENAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "api_key")  # API Key 存储文件名
+
+# ===================== API Key 存储加密功能 =====================
+def get_encryption_key():
+    """基于机器特定信息生成稳定的加密密钥"""
+    try:
+        # 使用机器ID作为密钥材料的一部分
+        import uuid
+        machine_id = uuid.getnode()
+        # 使用固定的盐值和机器ID创建密钥材料
+        key_material = f"deepseek-client-{machine_id}-salt-v1".encode()
+        # 生成符合Fernet要求的32字节密钥并进行base64编码
+        key = base64.urlsafe_b64encode(hashlib.sha256(key_material).digest())
+        return key
+    except Exception:
+        # 如果出错，使用一个默认密钥（这不够安全，但比没有加密好）
+        return base64.urlsafe_b64encode(hashlib.sha256(b"default-salt-key").digest())
+
+def encrypt_api_key(api_key):
+    """加密API密钥"""
+    if not api_key:
+        return None
+    try:
+        key = get_encryption_key()
+        f = Fernet(key)
+        return f.encrypt(api_key.encode()).decode()
+    except Exception as e:
+        print(f"加密API密钥时出错: {e}")
+        return None
+
+def decrypt_api_key(encrypted_api_key):
+    """解密API密钥"""
+    if not encrypted_api_key:
+        return None
+    try:
+        key = get_encryption_key()
+        f = Fernet(key)
+        return f.decrypt(encrypted_api_key.encode()).decode()
+    except Exception as e:
+        print(f"解密API密钥时出错: {e}")
+        return None
+
+def save_api_key_to_file(api_key):
+    """将API密钥加密后保存到文件"""
+    try:
+        encrypted = encrypt_api_key(api_key)
+        if encrypted:
+            with open(API_KEY_FILENAME, "w") as f:
+                f.write(encrypted)
+            return True
+        return False
+    except Exception as e:
+        print(f"保存API密钥时出错: {e}")
+        return False
+
+def load_api_key_from_file():
+    """从文件加载并解密API密钥"""
+    try:
+        if os.path.exists(API_KEY_FILENAME):
+            with open(API_KEY_FILENAME, "r") as f:
+                encrypted = f.read().strip()
+                return decrypt_api_key(encrypted)
+        return None
+    except Exception as e:
+        print(f"加载API密钥时出错: {e}")
+        return None
+
+def delete_api_key_file():
+    """删除存储API密钥的文件"""
+    if os.path.exists(API_KEY_FILENAME):
+        try:
+            os.remove(API_KEY_FILENAME)
+            return True
+        except Exception as e:
+            print(f"删除API密钥文件时出错: {e}")
+            return False
+    return True
 
 # ===================== GUI 部分 =====================
 if USE_GUI:
@@ -103,9 +188,15 @@ if USE_GUI:
             # API Key输入栏
             self.api_key_entry = tk.Entry(master, width=60, show="")
             self.api_key_entry.pack(side=tk.BOTTOM, fill=tk.X)
-            self.api_key_entry.insert(0, "")
-            self.api_key_entry.insert(0, "API KEY HERE")
-            self.api_key_entry.config(fg="gray")
+            
+            # 尝试从文件中加载API Key
+            saved_api_key = load_api_key_from_file()
+            if saved_api_key:
+                self.api_key_entry.insert(0, saved_api_key)
+                self.api_key_entry.config(fg="black")
+            else:
+                self.api_key_entry.insert(0, "API KEY HERE")
+                self.api_key_entry.config(fg="gray")
 
             def on_entry_click(event):
                 if self.api_key_entry.get() == "API KEY HERE":
@@ -129,7 +220,8 @@ if USE_GUI:
             self.init_btn = tk.Button(self.button_frame, text="Initialize Client", command=self.initialize_client, state=tk.NORMAL)
             self.init_btn.pack(side=tk.LEFT, padx=5)
 
-            self.clear_apikey_btn = tk.Button(self.button_frame, text="Clear API Key", command=self.clear_api_key, state=tk.DISABLED)
+            self.clear_apikey_btn = tk.Button(self.button_frame, text="Remove API Key", command=self.clear_api_key, 
+                                             state=tk.DISABLED if not saved_api_key else tk.NORMAL)
             self.clear_apikey_btn.pack(side=tk.LEFT, padx=5)
 
             self.model_btn = tk.Button(master, text="List and Select Model", command=self.list_and_select_model)
@@ -207,6 +299,12 @@ if USE_GUI:
                 self.client = OpenAI(api_key=api_key, base_url=DEEPSEEK_API_BASE_URL_V1)
                 self.api_key = api_key
                 self.print_out("Client initialized successfully.")
+                
+                # 保存API Key到加密文件
+                if save_api_key_to_file(api_key):
+                    self.print_out("API Key已安全加密保存到本地。")
+                else:
+                    self.print_out("注意：无法保存API Key到本地文件。")
 
                 masked = "*" * len(api_key)
                 self.api_key_masked_label.config(text=f"API Key: {masked}")
@@ -223,6 +321,12 @@ if USE_GUI:
                 self.update_client_status()
 
         def clear_api_key(self):
+            result = delete_api_key_file()
+            if result:
+                self.print_out("API Key已从本地文件移除。")
+            else:
+                self.print_out("无法删除API Key文件。")
+                
             self.api_key = ""
             self.client = None
             self.selected_model = None
@@ -542,10 +646,27 @@ if USE_GUI:
 
 # ===================== CLI 部分 =====================
 def get_api_key():
+    # 首先尝试从文件加载
+    saved_api_key = load_api_key_from_file()
+    if saved_api_key:
+        print(f"已从本地文件加载API Key (已加密保存)")
+        use_saved = input("是否使用已保存的API Key? (y/n): ").lower().strip()
+        if use_saved == 'y' or use_saved == '':
+            return saved_api_key
+    
     api_key = input("Enter your DeepSeek API Key: ").strip()
     while not api_key:
         print("API Key cannot be empty.")
         api_key = input("Enter your DeepSeek API Key: ").strip()
+    
+    # 询问是否保存API Key
+    save_key = input("是否保存API Key到本地文件? (y/n): ").lower().strip()
+    if save_key == 'y' or save_key == '':
+        if save_api_key_to_file(api_key):
+            print("API Key已安全加密并保存到本地文件。")
+        else:
+            print("保存API Key失败。")
+    
     return api_key
 
 def initialize_client(api_key):
