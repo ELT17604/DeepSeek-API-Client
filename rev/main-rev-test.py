@@ -1094,11 +1094,11 @@ if USE_GUI:
             if not self.client:
                 self.update_status_display("model", "Not available", "red")
             elif status == "fetch_fail":
-                self.update_status_display("model", "Failed to fetch", "yellow")
+                self.update_status_display("model", "Failed to fetch", "red")
             elif self.selected_model:
                 self.update_status_display("model", f"Selected: {self.selected_model}", "green")
             elif self.available_models:
-                self.update_status_display("model", "Available (none selected)", "red")
+                self.update_status_display("model", "Available (none selected)", "yellow")
             else:
                 self.update_status_display("model", "Not selected", "red")
 

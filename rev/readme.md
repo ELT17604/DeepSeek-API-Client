@@ -95,8 +95,8 @@ python main-single.py --cli
 |------|----------|------|
 | 🔴 红色 | Not selected | 未选择模型 |
 | 🔴 红色 | Not available | 模型不可用（客户端未初始化） |
-| 🔴 红色 | Available (none selected) | 有可用模型但未选择 |
-| 🟡 黄色 | Failed to fetch | 获取模型列表失败 |
+| 🔴 红色 | Failed to fetch | 获取模型列表失败 |
+| 🟡 黄色 | Available (none selected) | 有可用模型但未选择 |
 | 🟢 绿色 | Selected: [模型名] | 已选择模型 |
 
 #### HTTP（HTTP 状态）
