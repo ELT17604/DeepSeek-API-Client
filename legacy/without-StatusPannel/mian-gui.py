@@ -77,7 +77,7 @@ class DeepSeekGUI:
         # Copyright and version info (small font)
         self.footer_label = tk.Label(
             master,
-            text="DeepSeek API Client GUI v0.2.1 © 2025 ELT Group",
+            text="DeepSeek API Client GUI v0.2.1.1 © 2025 ELT Group",
             font=("Arial", 8),
             fg="gray"
         )
