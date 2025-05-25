@@ -167,7 +167,14 @@ class DeepSeekAPIClient:
 @app.route('/')
 def index():
     """主页面"""
-    return render_template('index.html')
+    version_info = {
+        'version': '0.7.2.1.f.0.0.1.a',
+        'build_date': '2025-05-25',
+        'server': 'Test Server',
+        'api_version': 'v1',
+        'author': 'ELT Group'
+    }
+    return render_template('index.html', version=version_info)
 
 @app.route('/api/initialize', methods=['POST'])
 def initialize_api():

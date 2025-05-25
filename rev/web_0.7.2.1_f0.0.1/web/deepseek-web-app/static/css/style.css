@@ -21,10 +21,13 @@ body {
     line-height: 1.6;
     min-height: 100vh;
     padding: 20px 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .container {
-    max-width: 1200px;
+    width: calc(100% - 40px); /* 使用相对宽度，两边留20px边距 */
+    max-width: none; /* 移除固定最大宽度限制 */
     margin: 0 auto;
     background: white;
     border-radius: 12px;
@@ -718,6 +721,67 @@ section:last-child {
     margin: 10px 0;
 }
 
+/* Footer 样式 */
+.footer {
+    margin-top: 30px; /* 与主容器保持距离 */
+    padding: 20px 0;
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    border-top: 1px solid #333;
+    color: #888;
+    font-size: 12px;
+    width: 100%;
+}
+
+.footer-content {
+    max-width: none; /* 移除最大宽度限制，跟随容器宽度 */
+    width: calc(100% - 40px); /* 与主容器保持相同的边距 */
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.version-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.version {
+    font-weight: 600;
+    color: #00d4aa;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.build-date, .api-version {
+    color: #666;
+    font-size: 11px;
+}
+
+.copyright {
+    text-align: right;
+    line-height: 1.4;
+}
+
+.copyright p {
+    margin: 0;
+    margin-bottom: 3px;
+}
+
+.copyright a {
+    color: #00d4aa;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.copyright a:hover {
+    color: #00f5cc;
+    text-decoration: underline;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
     body {
@@ -725,7 +789,8 @@ section:last-child {
     }
     
     .container {
-        margin: 0 10px;
+        width: calc(100% - 20px); /* 移动端减少边距 */
+        margin: 0 auto;
         min-height: calc(100vh - 20px);
         border-radius: 8px;
     }
@@ -800,26 +865,55 @@ section:last-child {
     .input-section {
         padding: 15px 20px;
     }
+    
+    .footer {
+        margin-top: 20px; /* 移动端减少上边距 */
+        font-size: 11px;
+    }
+    
+    .footer-content {
+        width: calc(100% - 20px); /* 移动端与主容器保持相同边距 */
+        flex-direction: column;
+        text-align: center;
+        gap: 15px;
+    }
+    
+    .copyright {
+        text-align: center;
+    }
 }
 
 @media (max-width: 480px) {
-    .header h1 {
-        font-size: 1.3rem;
+    .container {
+        width: calc(100% - 10px); /* 小屏幕进一步减少边距 */
+        border-radius: 6px;
     }
     
-    section {
-        padding: 15px;
+    .footer-content {
+        width: calc(100% - 10px); /* 小屏幕与主容器保持相同边距 */
+    }
+}
+
+/* 超宽屏幕优化 */
+@media (min-width: 1400px) {
+    .container {
+        width: calc(100% - 80px); /* 超宽屏幕增加边距以保持美观 */
+        max-width: 1600px; /* 设置合理的最大宽度 */
     }
     
-    .input-buttons {
-        flex-direction: column;
-        gap: 8px;
+    .footer-content {
+        width: calc(100% - 80px); /* 超宽屏幕与主容器保持相同边距 */
+    }
+}
+
+@media (min-width: 1800px) {
+    .container {
+        width: calc(100% - 120px);
+        max-width: 1800px;
     }
     
-    .render-controls {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 10px;
+    .footer-content {
+        width: calc(100% - 120px);
     }
 }
 

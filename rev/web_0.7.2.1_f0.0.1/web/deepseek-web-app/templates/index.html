@@ -148,6 +148,21 @@
         </div>
     </div>
 
+    <!-- 页脚区域 -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="version-info">
+                <span class="version">{{ version.server }} v{{ version.version }}</span>
+                <span class="build-date">构建时间: {{ version.build_date }}</span>
+                <span class="api-version">API版本: {{ version.api_version }}</span>
+            </div>
+            <div class="copyright">
+                <p>&copy; 2025 {{ version.author }}. All rights reserved.</p>
+                <p>基于 <a href="https://www.deepseek.com" target="_blank">DeepSeek API</a> 构建</p>
+            </div>
+        </div>
+    </footer>
+
     <!-- JavaScript 文件引入 -->
     <script src="/static/js/crypto.js"></script>
     <script src="/static/js/markdown.js"></script>
