@@ -46,7 +46,9 @@ from openai import OpenAI
 
 DEEPSEEK_API_BASE_URL_V1 = "https://api.deepseek.com/v1"
 DEEPSEEK_BALANCE_URL = "https://api.deepseek.com/user/balance"
-API_KEY_FILENAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "api_key")  # API Key 存储文件名
+# API Key 存储文件名 - 修改为当前Python文件同目录
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+API_KEY_FILENAME = os.path.join(SCRIPT_DIR, "API_KEY")
 
 # ===================== API Key 存储加密功能 =====================
 def get_encryption_key():
@@ -91,6 +93,11 @@ def decrypt_api_key(encrypted_api_key):
 def save_api_key_to_file(api_key):
     """将API密钥加密后保存到文件"""
     try:
+        # 确保目录存在（脚本所在目录应该已经存在）
+        script_dir = os.path.dirname(API_KEY_FILENAME)
+        if not os.path.exists(script_dir):
+            os.makedirs(script_dir)
+            
         encrypted = encrypt_api_key(api_key)
         if encrypted:
             with open(API_KEY_FILENAME, "w") as f:
@@ -757,6 +764,42 @@ if USE_GUI:
             self.update_model_status()
             self.update_http_status()
             self.update_chat_status("not_ready")
+
+        def show_http_error_dialog(self, status_code, operation, details=None):
+            """显示HTTP错误对话框"""
+            title = f"HTTP错误: {status_code} ({operation})"
+            message = f"在操作 '{operation}' 期间发生HTTP错误。\n状态码: {status_code}\n\n"
+            
+            error_map = {
+                400: "请求格式错误 (Bad Request)。请检查您的请求参数。",
+                401: "API密钥无效或未授权 (Unauthorized)。请检查您的API密钥是否正确且有权限访问该服务。",
+                402: "余额不足 (Payment Required)。您的账户余额可能不足以完成此操作。",
+                403: "禁止访问 (Forbidden)。您没有权限执行此操作。",
+                404: "未找到资源 (Not Found)。请求的资源不存在。",
+                422: "无法处理的实体 (Unprocessable Entity)。通常表示请求参数不符合API要求。",
+                429: "请求过于频繁 (Too Many Requests)。请稍后再试。",
+                500: "服务器内部错误 (Internal Server Error)。请稍后再试。",
+                502: "网关错误 (Bad Gateway)。上游服务器返回无效响应。",
+                503: "服务不可用 (Service Unavailable)。服务器当前无法处理请求，请稍后再试。"
+            }
+            
+            message += error_map.get(status_code, "发生未知HTTP错误。")
+            
+            if details:
+                try:
+                    # 尝试格式化JSON细节
+                    if isinstance(details, str):
+                        details_obj = json.loads(details)
+                        details_str = json.dumps(details_obj, indent=2, ensure_ascii=False)
+                    elif isinstance(details, dict):
+                        details_str = json.dumps(details, indent=2, ensure_ascii=False)
+                    else:
+                        details_str = str(details)
+                    message += f"\n\n详细信息:\n{details_str}"
+                except Exception:
+                    message += f"\n\n详细信息:\n{details}"
+            
+            messagebox.showerror(title, message)
 
         def toggle_status_window(self):
             """切换状态监控窗口的显示/隐藏"""
@@ -1711,6 +1754,7 @@ class DeepSeekCLI:
         try:
             print("正在获取可用模型...")
             models_response = self.client.models.list()
+
             
             # 过滤模型
             available_models = [model.id for model in models_response.data if
