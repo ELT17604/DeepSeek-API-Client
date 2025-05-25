@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek API 客户端 v0.7.2.1.f.0.0.1.a</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preload" href="/static/fonts/consolas.woff2" as="font" type="font/woff2" crossorigin>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部区域 -->
+        <header class="header">
+            <h1>DeepSeek API 客户端</h1>
+            <div class="status-indicator" id="status-indicator">
+                <span class="status-dot" id="status-dot"></span>
+                <span class="status-text" id="status-text">未连接</span>
+            </div>
+        </header>
+
+        <!-- API密钥配置区域 -->
+        <section class="api-key-section">
+            <div class="input-group">
+                <label for="api-key">API密钥:</label>
+                <input type="password" id="api-key" placeholder="请输入API密钥" autocomplete="off">
+                <button id="init-btn" class="btn btn-primary">初始化</button>
+                <button id="delete-key-btn" class="btn btn-danger" style="display: none;">删除密钥</button>
+            </div>
+            <div class="status-message" id="api-key-status"></div>
+            <div class="balance-info" id="balance-info" style="display: none;">
+                <span>余额: </span><span id="balance-amount">--</span>
+            </div>
+        </section>
+
+        <!-- 模型选择和配置区域 -->
+        <section class="model-section">
+            <div class="model-controls">
+                <div class="input-group">
+                    <label for="model-select">模型:</label>
+                    <select id="model-select" disabled>
+                        <option value="">请先初始化API密钥...</option>
+                    </select>
+                    <button id="refresh-models-btn" class="btn btn-secondary" disabled>刷新模型</button>
+                </div>
+                
+                <!-- 高级参数设置 -->
+                <details class="advanced-settings">
+                    <summary>高级参数</summary>
+                    <div class="parameter-grid">
+                        <div class="parameter-item">
+                            <label for="temperature">温度 (Temperature):</label>
+                            <input type="range" id="temperature" min="0" max="2" step="0.1" value="1">
+                            <span id="temperature-value">1.0</span>
+                        </div>
+                        <div class="parameter-item">
+                            <label for="max-tokens">最大令牌数:</label>
+                            <input type="number" id="max-tokens" min="1" max="8192" value="2048">
+                        </div>
+                        <div class="parameter-item">
+                            <label for="top-p">Top-p:</label>
+                            <input type="range" id="top-p" min="0" max="1" step="0.05" value="0.95">
+                            <span id="top-p-value">0.95</span>
+                        </div>
+                        <div class="parameter-item">
+                            <label for="frequency-penalty">频率惩罚:</label>
+                            <input type="range" id="frequency-penalty" min="0" max="2" step="0.1" value="0">
+                            <span id="frequency-penalty-value">0.0</span>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        </section>
+
+        <!-- 对话区域 -->
+        <section class="chat-section">
+            <div class="chat-container">
+                <!-- 系统提示词设置 -->
+                <div class="system-prompt-section">
+                    <label for="system-prompt">系统提示词:</label>
+                    <textarea id="system-prompt" rows="3" placeholder="您是一个有用的AI助手。">您是一个有用的AI助手。</textarea>
+                </div>
+
+                <!-- 对话历史 -->
+                <div class="chat-history" id="chat-history">
+                    <div class="welcome-message">
+                        <p>欢迎使用 DeepSeek API 客户端！</p>
+                        <p>请先输入您的 API 密钥并选择模型开始对话。</p>
+                    </div>
+                </div>
+
+                <!-- 输入区域 -->
+                <div class="input-section">
+                    <div class="input-controls">
+                        <textarea id="user-input" rows="3" placeholder="请输入您的消息..." disabled></textarea>
+                        <div class="input-buttons">
+                            <button id="send-btn" class="btn btn-primary" disabled>发送</button>
+                            <button id="clear-btn" class="btn btn-secondary">清空对话</button>
+                            <button id="stop-btn" class="btn btn-danger" style="display: none;">停止生成</button>
+                        </div>
+                    </div>
+                    <div class="render-controls">
+                        <label>
+                            <input type="checkbox" id="markdown-toggle" checked>
+                            Markdown 渲染
+                        </label>
+                        <label>
+                            <input type="checkbox" id="stream-toggle" checked>
+                            流式输出
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 工具栏 -->
+        <section class="toolbar">
+            <div class="toolbar-group">
+                <button id="export-btn" class="btn btn-secondary">导出对话</button>
+                <button id="import-btn" class="btn btn-secondary">导入对话</button>
+                <input type="file" id="import-file" accept=".json,.txt" style="display: none;">
+            </div>
+            <div class="toolbar-group">
+                <button id="font-increase-btn" class="btn btn-secondary">字体+</button>
+                <button id="font-decrease-btn" class="btn btn-secondary">字体-</button>
+                <select id="font-family-select">
+                    <option value="system-ui">系统字体</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Microsoft YaHei">微软雅黑</option>
+                    <option value="SimSun">宋体</option>
+                </select>
+            </div>
+        </section>
+    </div>
+
+    <!-- 加载指示器 -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">正在处理...</div>
+    </div>
+
+    <!-- 错误提示模态框 -->
+    <div id="error-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <h3>错误</h3>
+            <div id="error-message"></div>
+            <button class="btn btn-primary" onclick="closeErrorModal()">确定</button>
+        </div>
+    </div>
+
+    <!-- JavaScript 文件引入 -->
+    <script src="/static/js/crypto.js"></script>
+    <script src="/static/js/markdown.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
