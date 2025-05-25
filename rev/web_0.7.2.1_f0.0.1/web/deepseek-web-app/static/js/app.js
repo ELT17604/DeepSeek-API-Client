@@ -571,7 +571,8 @@ class DeepSeekWebClient {
             stream: true
         };
 
-        const response = await fetch('/api/chat', {
+        // 修改端点为 /api/chat/stream
+        const response = await fetch('/api/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody),
@@ -597,8 +598,15 @@ class DeepSeekWebClient {
 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
+                        const dataStr = line.slice(6);
+                        if (dataStr.trim() === '[DONE]') {
+                            break;
+                        }
                         try {
-                            const data = JSON.parse(line.slice(6));
+                            const data = JSON.parse(dataStr);
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
                             if (data.content) {
                                 assistantMessage += data.content;
                                 
@@ -607,6 +615,9 @@ class DeepSeekWebClient {
                                 }
                                 
                                 this.updateStreamingMessage(messageElement, assistantMessage);
+                            }
+                            if (data.finished) {
+                                break;
                             }
                         } catch (e) {
                             console.error('Error parsing stream data:', e);
@@ -649,9 +660,11 @@ class DeepSeekWebClient {
         const result = await response.json();
 
         if (result.success && result.content) {
-            this.addMessageToHistory('assistant', result.content);
+            // 修改为使用 result.content 而不是 result.message
+            const content = result.content || result.message;
+            this.addMessageToHistory('assistant', content);
             this.messages.push({ role: 'user', content: messages[messages.length - 1].content });
-            this.messages.push({ role: 'assistant', content: result.content });
+            this.messages.push({ role: 'assistant', content: content });
         } else {
             throw new Error(result.error || '获取回复失败');
         }

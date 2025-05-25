@@ -359,10 +359,11 @@ def chat_completion():
         
         if result['success']:
             response_data = result['data']
+            content = response_data['choices'][0]['message']['content']
             return jsonify({
                 'success': True,
+                'content': content,  # 确保返回 content 字段
                 'response': response_data,
-                'message': response_data['choices'][0]['message']['content'],
                 'usage': response_data.get('usage', {})
             })
         else:
